@@ -27,6 +27,8 @@ const authRoutes = require('./routes/authRoutes');
 const jobRoutes = require('./routes/jobRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const tpoRoutes = require('./routes/tpoRoutes');
+const announcementRoutes = require('./routes/announcementRoutes');
 
 // ============================================
 // API ROUTES
@@ -43,6 +45,8 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/jobs', jobRoutes);
 app.use('/api/v1/applications', applicationRoutes);
 app.use('/api/v1/students', studentRoutes);
+app.use('/api/v1/tpo', tpoRoutes);
+app.use('/api/v1/announcements', announcementRoutes);
 
 // ============================================
 // ERROR HANDLER

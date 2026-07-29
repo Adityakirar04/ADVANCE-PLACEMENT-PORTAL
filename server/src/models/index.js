@@ -3,5 +3,6 @@
   StudentProfile: require('./StudentProfile'),
   CompanyProfile: require('./CompanyProfile'),
   Job: require('./Job'),
-  Application: require('./Application')
+  Application: require('./Application'),
+  Announcement: require('./Announcement')
 };
