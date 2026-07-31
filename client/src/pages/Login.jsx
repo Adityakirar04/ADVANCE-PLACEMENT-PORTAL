@@ -32,24 +32,94 @@ const Login = () => {
     }
   }, [form.email, form.password, login, navigate]);
 
-  const s = {
-    container: { maxWidth: '400px', margin: '80px auto', padding: '30px', boxShadow: '0 0 20px rgba(0,0,0,0.1)', borderRadius: '10px' },
-    input: { width: '100%', padding: '12px', margin: '10px 0', border: '1px solid #ddd', borderRadius: '5px', fontSize: '14px' },
-    btn: { width: '100%', padding: '12px', background: '#16213e', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '16px', marginTop: '10px' },
-    error: { color: 'red', marginBottom: '10px', fontSize: '14px' },
-    link: { textAlign: 'center', marginTop: '15px', fontSize: '14px' }
-  };
-
   return (
-    <div style={s.container}>
-      <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>🔐 Login</h2>
-      {error && <div style={s.error}>{error}</div>}
-      <form onSubmit={handleSubmit}>
-        <input style={s.input} type="email" name="email" placeholder="Email" value={form.email} onChange={handleChange} required />
-        <input style={s.input} type="password" name="password" placeholder="Password" value={form.password} onChange={handleChange} required />
-        <button style={s.btn} type="submit">Login</button>
-      </form>
-      <div style={s.link}>New user? <Link to="/register">Register here</Link></div>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '16px',
+      background: '#f3f4f6'
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: '420px',
+        background: '#ffffff',
+        padding: '32px',
+        borderRadius: '16px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+        border: '1px solid #e5e7eb'
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          <div style={{ fontSize: '40px', marginBottom: '8px' }}>🔐</div>
+          <h2 style={{ margin: 0, color: '#111827', fontSize: '24px', fontWeight: '700' }}>Welcome Back</h2>
+          <p style={{ margin: '6px 0 0 0', color: '#6b7280', fontSize: '14px' }}>Login to your Smart Placement account</p>
+        </div>
+
+        {error && (
+          <div style={{
+            background: '#fee2e2', color: '#991b1b', padding: '10px 14px',
+            borderRadius: '8px', fontSize: '13px', marginBottom: '16px', fontWeight: '500'
+          }}>
+            ⚠️ {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>Email</label>
+            <input
+              type="email"
+              name="email"
+              placeholder="you@example.com"
+              value={form.email}
+              onChange={handleChange}
+              required
+              style={{
+                width: '100%', padding: '11px 14px', border: '1px solid #d1d5db',
+                borderRadius: '8px', fontSize: '14px', color: '#111827', outline: 'none',
+                background: '#ffffff', transition: 'border 0.2s'
+              }}
+              onFocus={(e) => e.target.style.border = '#2563eb'}
+              onBlur={(e) => e.target.style.border = '#d1d5db'}
+            />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>Password</label>
+            <input
+              type="password"
+              name="password"
+              placeholder="••••••••"
+              value={form.password}
+              onChange={handleChange}
+              required
+              style={{
+                width: '100%', padding: '11px 14px', border: '1px solid #d1d5db',
+                borderRadius: '8px', fontSize: '14px', color: '#111827', outline: 'none',
+                background: '#ffffff'
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            style={{
+              width: '100%', padding: '12px', background: '#1e3a8a', color: '#ffffff',
+              border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600',
+              cursor: 'pointer', transition: 'background 0.2s'
+            }}
+            onMouseEnter={(e) => e.target.style.background = '#1e40af'}
+            onMouseLeave={(e) => e.target.style.background = '#1e3a8a'}
+          >
+            Login
+          </button>
+        </form>
+
+        <div style={{ textAlign: 'center', marginTop: '18px', fontSize: '14px', color: '#6b7280' }}>
+          New user? <Link to="/register" style={{ color: '#2563eb', fontWeight: '600' }}>Register here</Link>
+        </div>
+      </div>
     </div>
   );
 };
