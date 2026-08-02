@@ -1,206 +1,135 @@
- const { User, StudentProfile, CompanyProfile, Job, Application } = require('../models');
+ const User = require('../models/User');
 
 // ============================================
-// GET ALL STUDENTS (TPO only)
+// GET ALL PENDING USERS
 // ============================================
-const getAllStudents = async (req, res) => {
+// TPO Dashboard pe jab "Pending Approvals" khulega,
+// yeh sirf un users ko layega jinka approvalStatus 'pending' hai.
+// Sort: Naye registrations pehle (createdAt descending).
+// Select: Password field hata diya taaki secure rahe.
+// ============================================
+exports.getPendingUsers = async (req, res) => {
   try {
-    const { branch, placement_status, min_cgpa } = req.query;
-
-    let matchStage = {};
-    if (branch) matchStage.branch = branch;
-    if (placement_status) matchStage.placement_status = placement_status;
-    if (min_cgpa) matchStage.cgpa = { $gte: parseFloat(min_cgpa) };
-
-    const students = await StudentProfile.find(matchStage)
-      .populate('user_id', 'first_name last_name email phone is_active')
-      .sort({ cgpa: -1 });
+    const users = await User.find({ approvalStatus: 'pending' })
+      .select('-password')           // Password mat bhejo response mein
+      .sort({ createdAt: -1 })       // Naya pehle
+      .lean();                       // Plain JS object — memory kam use hoga
 
     res.status(200).json({
       success: true,
-      count: students.length,
-      data: students
+      count: users.length,
+      data: users
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // ============================================
-// GET SINGLE STUDENT DETAIL (TPO only)
+// APPROVE USER
 // ============================================
-const getStudentById = async (req, res) => {
+// TPO "Approve" button click karega → user ka status 'approved' ho jayega.
+// Rejection reason bhi clear kar dete hain taaki purani reason na rahe.
+// { new: true } se updated document return hota hai.
+// ============================================
+exports.approveUser = async (req, res) => {
   try {
-    const student = await StudentProfile.findById(req.params.id)
-      .populate('user_id', 'first_name last_name email phone');
+    const { userId } = req.params;
 
-    if (!student) {
-      return res.status(404).json({ success: false, message: 'Student not found' });
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { 
+        approvalStatus: 'approved',
+        rejectionReason: ''  // Purana reason hata do
+      },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
     }
 
-    const applications = await Application.find({ student_id: student._id })
-      .populate('job_id', 'title company_id location ctc_min ctc_max')
-      .sort({ createdAt: -1 });
-
     res.status(200).json({
       success: true,
-      data: {
-        student,
-        applications
-      }
+      message: `${user.first_name} ${user.last_name} has been approved successfully`,
+      data: user
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // ============================================
-// GET ALL COMPANIES (TPO only)
+// REJECT USER
 // ============================================
-const getAllCompanies = async (req, res) => {
+// TPO "Reject" karega toh reason bhi dena hoga (frontend se body mein aayega).
+// Status 'rejected' set hoga aur reason store hoga.
+// User ko login karte waqt yeh reason dikhayega.
+// ============================================
+exports.rejectUser = async (req, res) => {
   try {
-    const companies = await CompanyProfile.find()
-      .populate('user_id', 'first_name last_name email phone is_active')
-      .sort({ createdAt: -1 });
+    const { userId } = req.params;
+    const { reason } = req.body;
 
-    res.status(200).json({
-      success: true,
-      count: companies.length,
-      data: companies
-    });
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { 
+        approvalStatus: 'rejected',
+        rejectionReason: reason || 'No reason provided'
+      },
+      { new: true, runValidators: true }
+    ).select('-password');
 
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ============================================
-// VERIFY COMPANY (TPO only)
-// ============================================
-const verifyCompany = async (req, res) => {
-  try {
-    const { is_verified } = req.body;
-
-    const company = await CompanyProfile.findById(req.params.id);
-
-    if (!company) {
-      return res.status(404).json({ success: false, message: 'Company not found' });
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
     }
 
-    company.is_verified = is_verified;
-    await company.save();
-
     res.status(200).json({
       success: true,
-      message: `Company ${is_verified ? 'verified' : 'unverified'} successfully`,
-      data: company
+      message: `${user.first_name} ${user.last_name} has been rejected`,
+      data: user
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // ============================================
-// PLACEMENT STATISTICS (TPO Dashboard)
+// GET ALL USERS (Analytics ke liye)
 // ============================================
-const getPlacementStats = async (req, res) => {
+// TPO ko overall stats chahiye honge:
+// Total kitne users, kitne pending, approved, rejected.
+// Lean() se mongoose documents ka overhead kam hota hai.
+// ============================================
+exports.getAllUsers = async (req, res) => {
   try {
-    const totalStudents = await StudentProfile.countDocuments();
-    const placedStudents = await StudentProfile.countDocuments({ placement_status: 'placed' });
-    const unplacedStudents = await StudentProfile.countDocuments({ placement_status: 'unplaced' });
-    const higherStudies = await StudentProfile.countDocuments({ placement_status: 'higher_studies' });
+    const users = await User.find()
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const cgpaStats = await StudentProfile.aggregate([
-      { $group: { _id: null, avgCgpa: { $avg: '$cgpa' } } }
-    ]);
-    const averageCgpa = cgpaStats.length > 0 ? cgpaStats[0].avgCgpa.toFixed(2) : 0;
-
-    const packageStats = await StudentProfile.aggregate([
-      { $match: { placement_status: 'placed', package_lpa: { $ne: null } } },
-      { $group: { _id: null, avgPackage: { $avg: '$package_lpa' } } }
-    ]);
-    const averagePackage = packageStats.length > 0 ? packageStats[0].avgPackage.toFixed(2) : 0;
-
-    const totalCompanies = await CompanyProfile.countDocuments();
-    const verifiedCompanies = await CompanyProfile.countDocuments({ is_verified: true });
-    const totalJobs = await Job.countDocuments();
-    const activeJobs = await Job.countDocuments({ status: 'active' });
-    const totalApplications = await Application.countDocuments();
-
-    const branchStats = await StudentProfile.aggregate([
-      { $group: {
-        _id: '$branch',
-        total: { $sum: 1 },
-        placed: { $sum: { $cond: [{ $eq: ['$placement_status', 'placed'] }, 1, 0] } },
-        avgCgpa: { $avg: '$cgpa' }
-      }}
-    ]);
+    // Array methods se count nikaal rahe hain
+    const stats = {
+      total: users.length,
+      pending: users.filter(u => u.approvalStatus === 'pending').length,
+      approved: users.filter(u => u.approvalStatus === 'approved').length,
+      rejected: users.filter(u => u.approvalStatus === 'rejected').length,
+      students: users.filter(u => u.role === 'student').length,
+      companies: users.filter(u => u.role === 'company').length
+    };
 
     res.status(200).json({
       success: true,
-      data: {
-        overview: {
-          totalStudents,
-          placedStudents,
-          unplacedStudents,
-          higherStudies,
-          averageCgpa,
-          averagePackage,
-          totalCompanies,
-          verifiedCompanies,
-          totalJobs,
-          activeJobs,
-          totalApplications
-        },
-        branchWise: branchStats
-      }
+      stats,
+      data: users
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
-};
-
-// ============================================
-// GET RECENT ACTIVITY (TPO Dashboard)
-// ============================================
-const getRecentActivity = async (req, res) => {
-  try {
-    const recentApplications = await Application.find()
-      .populate('student_id', 'enrollment_number branch')
-      .populate('job_id', 'title')
-      .sort({ createdAt: -1 })
-      .limit(10);
-
-    const recentJobs = await Job.find()
-      .populate('company_id', 'company_name')
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        recentApplications,
-        recentJobs
-      }
-    });
-
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ============================================
-// EK HI module.exports - LAST LINE
-// ============================================
-module.exports = {
-  getAllStudents,
-  getStudentById,
-  getAllCompanies,
-  verifyCompany,
-  getPlacementStats,
-  getRecentActivity
 };

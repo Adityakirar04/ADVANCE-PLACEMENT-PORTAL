@@ -1,45 +1,51 @@
-const mongoose = require('mongoose');
+ const mongoose = require('mongoose');
 
 const companyProfileSchema = new mongoose.Schema({
-  
   user_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
-    unique: true
+    required: true
+    // index: true  ← HATA DO (niche schema.index() se ban raha hai)
   },
-  
+
   company_name: {
     type: String,
-    required: true
+    default: ''
   },
-  
-  company_type: {
-    type: String,
-    enum: ['MNC', 'Startup', 'Mid-Size', 'Government', 'NGO']
-  },
-  
+
   industry: {
     type: String,
-    required: true
+    default: ''
   },
-  
-  website: String,
-  description: String,
-  city: String,
-  state: String,
-  
-  hr_name: String,
-  hr_email: String,
-  hr_phone: String,
-  
-  is_verified: {
-    type: Boolean,
-    default: false
+
+  website: {
+    type: String,
+    default: ''
+  },
+
+  location: {
+    type: String,
+    default: ''
+  },
+
+  description: {
+    type: String,
+    default: ''
+  },
+
+  contact_person: {
+    type: String,
+    default: ''
+  },
+
+  phone: {
+    type: String,
+    default: ''
   }
-  
-}, {
-  timestamps: true
-});
+
+}, { timestamps: true });
+
+// Single index definition
+companyProfileSchema.index({ user_id: 1 });
 
 module.exports = mongoose.model('CompanyProfile', companyProfileSchema);

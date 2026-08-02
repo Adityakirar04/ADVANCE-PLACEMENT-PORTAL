@@ -1,57 +1,87 @@
  const mammoth = require('mammoth');
 
-// pdf-parse ko safely load karo (iska test file bug hota hai)
-let pdfParse = null;
+// ============================================
+// PDF-PARSE: Ultra robust import
+// pdf-parse ka structure har version mein alag hota hai
+// ============================================
+let pdfParse;
 try {
   const pdfModule = require('pdf-parse');
-  pdfParse = typeof pdfModule === 'function' ? pdfModule : (pdfModule?.default || pdfModule?.parse);
+  // Check all possible export patterns
+  if (typeof pdfModule === 'function') {
+    pdfParse = pdfModule;
+  } else if (pdfModule.default && typeof pdfModule.default === 'function') {
+    pdfParse = pdfModule.default;
+  } else if (pdfModule.parse && typeof pdfModule.parse === 'function') {
+    pdfParse = pdfModule.parse;
+  } else {
+    // Last resort: try to find any function in the module
+    const keys = Object.keys(pdfModule);
+    for (const key of keys) {
+      if (typeof pdfModule[key] === 'function') {
+        pdfParse = pdfModule[key];
+        break;
+      }
+    }
+  }
 } catch (e) {
-  console.error('⚠️ pdf-parse load failed:', e.message);
+  console.error('pdf-parse import failed:', e.message);
 }
 
+// ============================================
+// SKILLS DATABASE
+// ============================================
 const SKILLS_DB = [
-  'javascript', 'js', 'typescript', 'ts', 'python', 'java', 'c++', 'cpp', 'c', 'c#', 'csharp', 
-  'go', 'golang', 'rust', 'ruby', 'php', 'swift', 'kotlin', 'dart',
-  'html', 'css', 'react', 'reactjs', 'angular', 'vue', 'vuejs', 'nextjs', 'nodejs', 'node', 
-  'express', 'expressjs', 'django', 'flask', 'spring', 'springboot',
-  'mongodb', 'mysql', 'postgresql', 'sqlite', 'redis', 'firebase', 'dynamodb', 'oracle', 'sql',
-  'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'jenkins', 'git', 'github', 'gitlab', 
-  'terraform', 'nginx',
-  'machine learning', 'deep learning', 'tensorflow', 'pytorch', 'keras', 'opencv', 'pandas', 
-  'numpy', 'matplotlib', 'seaborn', 'scikit-learn', 'nlp', 'data science',
-  'react native', 'flutter', 'android', 'ios', 'xamarin',
-  'linux', 'ubuntu', 'bash', 'shell scripting', 'rest api', 'graphql', 'websocket', 
-  'microservices', 'blockchain', 'solidity',
-  'dsa', 'data structures', 'algorithms', 'system design', 'oop', 'agile', 'scrum', 'jira',
-  'frontend development', 'backend development', 'full stack', 'web development',
-  'mongodb', 'mongoose', 'prisma', 'sequelize'
+  'javascript', 'js', 'typescript', 'ts', 'python', 'java', 'c++', 'c#', 'go', 'rust',
+  'ruby', 'php', 'swift', 'kotlin', 'dart', 'scala', 'perl', 'r',
+  'react', 'reactjs', 'angular', 'vue', 'vuejs', 'svelte', 'nextjs', 'nuxtjs',
+  'node', 'nodejs', 'express', 'nestjs', 'fastify', 'django', 'flask', 'spring',
+  'spring boot', 'laravel', 'rails', 'asp.net', 'dotnet',
+  'mongodb', 'mongoose', 'mysql', 'postgresql', 'sqlite', 'redis', 'firebase',
+  'dynamodb', 'cassandra', 'elasticsearch', 'neo4j',
+  'aws', 'azure', 'gcp', 'google cloud', 'heroku', 'vercel', 'netlify', 'digitalocean',
+  'docker', 'kubernetes', 'jenkins', 'github actions', 'gitlab ci', 'circleci',
+  'terraform', 'ansible', 'puppet', 'chef',
+  'git', 'github', 'gitlab', 'bitbucket',
+  'html', 'html5', 'css', 'css3', 'sass', 'scss', 'less', 'tailwind', 'bootstrap',
+  'material ui', 'mui', 'chakra ui', 'ant design',
+  'redux', 'zustand', 'mobx', 'recoil', 'context api',
+  'graphql', 'apollo', 'rest api', 'restful', 'soap', 'grpc', 'websocket',
+  'jest', 'mocha', 'chai', 'cypress', 'playwright', 'selenium', 'junit', 'pytest',
+  'webpack', 'vite', 'rollup', 'parcel', 'babel', 'esbuild',
+  'linux', 'ubuntu', 'centos', 'bash', 'shell', 'powershell',
+  'nginx', 'apache', 'tomcat', 'iis',
+  'tensorflow', 'pytorch', 'keras', 'scikit-learn', 'pandas', 'numpy',
+  'matplotlib', 'seaborn', 'opencv', 'nltk', 'spacy',
+  'tableau', 'powerbi', 'power bi', 'excel', 'spss',
+  'figma', 'sketch', 'adobe xd', 'photoshop', 'illustrator',
+  'jira', 'trello', 'asana', 'notion', 'confluence',
+  'agile', 'scrum', 'kanban', 'devops', 'ci/cd', 'tdd', 'bdd',
+  'microservices', 'serverless', 'lambda', 'monolith',
+  'oauth', 'jwt', 'sso', 'ldap', 'auth0', 'firebase auth',
+  'seo', 'analytics', 'google analytics', 'gtm',
+  'blockchain', 'solidity', 'ethereum', 'web3', 'smart contracts',
+  'unity', 'unreal engine', 'blender', 'maya', '3ds max',
+  'c', 'sql', 'nosql', 'oracle', 'db2', 'mariadb',
+  'flutter', 'react native', 'ionic', 'xamarin',
+  'android', 'ios',
+  'data structures', 'algorithms', 'dsa', 'oops', 'operating system', 'os',
+  'computer networks', 'cn', 'dbms', 'compiler design',
+  'machine learning', 'deep learning', 'nlp', 'computer vision',
+  'excel', 'word', 'powerpoint', 'ms office'
 ];
 
-function normalizeSkill(skill) {
-  const map = {
-    'js': 'JavaScript', 'ts': 'TypeScript', 'cpp': 'C++', 'csharp': 'C#',
-    'node': 'Node.js', 'reactjs': 'React', 'vuejs': 'Vue', 'golang': 'Go',
-    'dsa': 'DSA', 'expressjs': 'Express.js', 'sql': 'SQL'
-  };
-  const lower = skill.toLowerCase();
-  if (map[lower]) return map[lower];
-  return skill.charAt(0).toUpperCase() + skill.slice(1);
-}
-
 function extractSkills(text) {
-  if (!text || typeof text !== 'string') return [];
-  const lowerText = text.toLowerCase();
   const found = new Set();
+  const lowerText = text.toLowerCase();
 
-  SKILLS_DB.forEach(skill => {
-    try {
-      const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-      if (regex.test(lowerText)) {
-        found.add(normalizeSkill(skill));
-      }
-    } catch (e) { /* ignore bad regex */ }
-  });
+  for (const skill of SKILLS_DB) {
+    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+    if (regex.test(lowerText)) {
+      found.add(skill);
+    }
+  }
 
   return Array.from(found);
 }
@@ -62,38 +92,40 @@ async function parseResume(buffer, mimetype) {
 
   try {
     if (mimetype === 'application/pdf') {
+      // 🔥 ULTRA ROBUST: pdf-parse ko multiple tareeko se try karo
       if (!pdfParse) {
-        parseError = 'PDF parser not available. Resume saved without parsing.';
-      } else {
-        // max: 0 prevents pdf-parse test file bug
-        const data = await pdfParse(buffer, { max: 0 });
-        text = data?.text || '';
-        console.log('📄 PDF extracted text length:', text.length);
-        if (!text.trim()) parseError = 'PDF has no text (might be scanned/image-based)';
+        throw new Error('pdf-parse not available. Run: npm install pdf-parse@1.1.1');
       }
-    } else if (
-      mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+
+      const data = await pdfParse(buffer);
+      text = data?.text || data?.content || '';
+
+      if (!text) {
+        throw new Error('PDF parsed but no text extracted. Try a text-based PDF.');
+      }
+    } 
+    else if (
+      mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       mimetype === 'application/msword'
     ) {
       const result = await mammoth.extractRawText({ buffer });
-      text = result?.value || '';
-      console.log('📄 DOCX extracted text length:', text.length);
-      if (!text.trim()) parseError = 'Document has no extractable text';
-    } else {
-      parseError = 'Unsupported file type. Use PDF or DOCX.';
+      text = result.value || '';
+    } 
+    else {
+      parseError = 'Unsupported file type. Only PDF and DOCX allowed.';
     }
-
-    const skills = extractSkills(text);
-    return { 
-      textPreview: text.substring(0, 300), 
-      skills, 
-      skillCount: skills.length,
-      parseError 
-    };
   } catch (err) {
-    console.error('❌ Parser error:', err.message);
-    return { textPreview: '', skills: [], skillCount: 0, parseError: err.message };
+    console.error('Resume parse error:', err.message);
+    parseError = `Failed to parse resume: ${err.message}`;
   }
+
+  const skills = text ? extractSkills(text) : [];
+
+  return {
+    textPreview: text,
+    skills,
+    parseError
+  };
 }
 
 module.exports = { parseResume, extractSkills };

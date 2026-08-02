@@ -1,72 +1,76 @@
- import { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
+ import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
 const AuthContext = createContext();
-export const useAuth = () => useContext(AuthContext);
-
-const axiosInstance = axios.create({ baseURL: 'http://localhost:5000/api/v1' });
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
-  const logout = useCallback(() => {
+  const api = axios.create({
+    baseURL: 'http://localhost:5000/api/v1',
+    timeout: 15000,
+  });
+
+  // Token interceptor
+  api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  });
+
+  // ============================================
+  // LOGIN
+  // ============================================
+  const login = async (email, password) => {
+    const res = await api.post('/auth/login', { email, password });
+    
+    if (res.data?.success) {
+      localStorage.setItem('token', res.data.token);
+      setUser(res.data.user);
+    }
+    
+    // Hamesha response return karo — chahe success ho ya na ho
+    return res.data;
+  };
+
+  // ============================================
+  // REGISTER — Fixed: hamesha response return
+  // ============================================
+  const register = async (userData) => {
+    const res = await api.post('/auth/register', userData);
+    
+    // 🔥 FIX: Backend se jo bhi aaye, return karo
+    // Chahe success ho ya error, frontend handle karega
+    return res.data;
+  };
+
+  const logout = () => {
     localStorage.removeItem('token');
-    setToken(null);
     setUser(null);
-  }, []);
+  };
 
   useEffect(() => {
-    let active = true;
-    const fetchUser = async () => {
-      if (!token) { if (active) setLoading(false); return; }
-      try {
-        const res = await axiosInstance.get('/auth/me', { headers: { Authorization: `Bearer ${token}` } });
-        const responseData = res.data.data || res.data;
-        const userData = responseData.user || responseData;
-        if (active) setUser(userData);
-      } catch (err) {
-        console.error('/auth/me error:', err.response?.data || err.message);
-      } finally {
-        if (active) setLoading(false);
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const res = await api.get('/auth/me');
+          if (res.data?.data) setUser(res.data.data);
+        } catch {
+          localStorage.removeItem('token');
+        }
       }
+      setLoading(false);
     };
-    fetchUser();
-    return () => { active = false; };
-  }, [token]);
-
-  const login = useCallback(async (email, password) => {
-    const res = await axiosInstance.post('/auth/login', { email, password });
-    const responseData = res.data.data || res.data;
-    const newToken = responseData.token;
-    const userData = responseData.user || responseData;
-    localStorage.setItem('token', newToken);
-    setToken(newToken);
-    setUser(userData);
-    return userData;
+    checkAuth();
   }, []);
 
-  const register = useCallback(async (formData) => {
-    const res = await axiosInstance.post('/auth/register', formData);
-    const responseData = res.data.data || res.data;
-    const newToken = responseData.token;
-    const userData = responseData.user || responseData;
-    localStorage.setItem('token', newToken);
-    setToken(newToken);
-    setUser(userData);
-    return userData;
-  }, []);
-
-  const api = useMemo(() => ({
-    get: (url) => axiosInstance.get(url, { headers: { Authorization: `Bearer ${token}` } }),
-    post: (url, data) => axiosInstance.post(url, data, { headers: { Authorization: `Bearer ${token}` } }),
-    put: (url, data) => axiosInstance.put(url, data, { headers: { Authorization: `Bearer ${token}` } }),
-    delete: (url) => axiosInstance.delete(url, { headers: { Authorization: `Bearer ${token}` } }),
-  }), [token]);
-
-  const value = useMemo(() => ({ user, token, login, register, logout, api, loading }),
-    [user, token, login, register, logout, api, loading]);
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, login, register, logout, api, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
+
+export const useAuth = () => useContext(AuthContext);

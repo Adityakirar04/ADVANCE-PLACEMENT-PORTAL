@@ -1,112 +1,159 @@
- import { useEffect, useState } from 'react';
+ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const TPODashboard = () => {
   const { api } = useAuth();
-  const [stats, setStats] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const fetchStats = async () => {
-      try {
-        const res = await api.get('/tpo/stats');
-        if (cancelled) return;
-        setStats(res.data.data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchStats();
-    return () => { cancelled = true; };
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [pendingRes, allRes] = await Promise.all([
+        api.get('/tpo/pending-users'),
+        api.get('/tpo/all-users')
+      ]);
+      setPendingUsers(pendingRes.data.data || []);
+      setStats(allRes.data.stats || { total: 0, pending: 0, approved: 0, rejected: 0 });
+    } catch (err) {
+      setMessage('❌ Failed to load data');
+    } finally {
+      setLoading(false);
+    }
   }, [api]);
 
-  const StatCard = ({ icon, value, label, color }) => (
-    <div style={{
-      background: '#ffffff',
-      borderRadius: '12px',
-      padding: '24px 16px',
-      textAlign: 'center',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-      border: '1px solid #e5e7eb',
-      transition: 'transform 0.2s',
-      cursor: 'default'
-    }}>
-      <div style={{ fontSize: '32px', marginBottom: '8px' }}>{icon}</div>
-      <div style={{ fontSize: '28px', fontWeight: '700', color: color || '#1f2937' }}>{value}</div>
-      <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px', fontWeight: '500' }}>{label}</div>
-    </div>
-  );
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (!stats) return (
-    <div style={{ textAlign: 'center', marginTop: '100px', color: '#6b7280' }}>
-      <div style={{ fontSize: '24px' }}>⏳</div>Loading...
-    </div>
-  );
+  const handleApprove = async (userId) => {
+    try {
+      const res = await api.put(`/tpo/approve-user/${userId}`);
+      setPendingUsers(prev => prev.filter(u => u._id !== userId));
+      setStats(prev => ({ ...prev, pending: prev.pending - 1, approved: prev.approved + 1 }));
+      setMessage(`✅ ${res.data.message}`);
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setMessage('❌ Approve failed');
+    }
+  };
+
+  const handleReject = async (userId) => {
+    const reason = prompt('Rejection reason (optional):');
+    try {
+      const res = await api.put(`/tpo/reject-user/${userId}`, { reason: reason || '' });
+      setPendingUsers(prev => prev.filter(u => u._id !== userId));
+      setStats(prev => ({ ...prev, pending: prev.pending - 1, rejected: prev.rejected + 1 }));
+      setMessage(`✅ ${res.data.message}`);
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setMessage('❌ Reject failed');
+    }
+  };
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px', background: '#f3f4f6', minHeight: '100vh' }}>
-      <h2 style={{ color: '#111827', marginBottom: '24px', fontSize: '24px', fontWeight: '700' }}>📊 TPO Dashboard</h2>
-      
-      {/* Stats Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-        gap: '16px',
-        marginBottom: '32px'
-      }}>
-        <StatCard icon="👨‍🎓" value={stats.overview.totalStudents} label="Total Students" color="#2563eb" />
-        <StatCard icon="✅" value={stats.overview.placedStudents} label="Placed" color="#16a34a" />
-        <StatCard icon="❌" value={stats.overview.unplacedStudents} label="Unplaced" color="#dc2626" />
-        <StatCard icon="📈" value={stats.overview.averageCgpa} label="Avg CGPA" color="#7c3aed" />
-        <StatCard icon="🏢" value={stats.overview.totalCompanies} label="Companies" color="#ea580c" />
-        <StatCard icon="💼" value={stats.overview.activeJobs} label="Active Jobs" color="#0891b2" />
-        <StatCard icon="📝" value={stats.overview.totalApplications} label="Applications" color="#db2777" />
+    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px', background: '#f3f4f6', minHeight: '100vh' }}>
+      <h2 style={{ color: '#111827', fontSize: '26px', fontWeight: '700', marginBottom: '4px' }}>
+        🎓 TPO Dashboard
+      </h2>
+      <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>
+        Approve or reject student & company registrations.
+      </p>
+
+      {message && (
+        <div style={{
+          padding: '12px 16px', borderRadius: '8px', marginBottom: '20px',
+          background: message.startsWith('✅') ? '#d1fae5' : '#fee2e2',
+          color: message.startsWith('✅') ? '#065f46' : '#991b1b',
+          fontSize: '14px', fontWeight: '500'
+        }}>
+          {message}
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+        {[
+          { label: 'Total Users', value: stats.total, color: '#1e3a8a', bg: '#dbeafe' },
+          { label: 'Pending', value: stats.pending, color: '#92400e', bg: '#fef3c7' },
+          { label: 'Approved', value: stats.approved, color: '#166534', bg: '#d1fae5' },
+          { label: 'Rejected', value: stats.rejected, color: '#991b1b', bg: '#fee2e2' },
+        ].map((s, i) => (
+          <div key={i} style={{
+            background: '#fff', borderRadius: '12px', padding: '20px',
+            borderLeft: `4px solid ${s.color}`, textAlign: 'center',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+          }}>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>{s.label}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Branch Table */}
-      <div style={{
-        background: '#ffffff',
-        borderRadius: '12px',
-        padding: '24px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        border: '1px solid #e5e7eb',
-        overflowX: 'auto'
-      }}>
-        <h3 style={{ color: '#111827', marginBottom: '16px', fontSize: '18px', fontWeight: '600' }}>📚 Branch-wise Stats</h3>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-          <thead>
-            <tr style={{ background: '#f9fafb' }}>
-              <th style={{ padding: '12px 16px', textAlign: 'left', color: '#374151', fontWeight: '600', borderBottom: '1px solid #e5e7eb' }}>Branch</th>
-              <th style={{ padding: '12px 16px', textAlign: 'center', color: '#374151', fontWeight: '600', borderBottom: '1px solid #e5e7eb' }}>Total</th>
-              <th style={{ padding: '12px 16px', textAlign: 'center', color: '#374151', fontWeight: '600', borderBottom: '1px solid #e5e7eb' }}>Placed</th>
-              <th style={{ padding: '12px 16px', textAlign: 'center', color: '#374151', fontWeight: '600', borderBottom: '1px solid #e5e7eb' }}>Avg CGPA</th>
-              <th style={{ padding: '12px 16px', textAlign: 'center', color: '#374151', fontWeight: '600', borderBottom: '1px solid #e5e7eb' }}>Placement %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.branchWise?.map((b) => {
-              const pct = b.total > 0 ? ((b.placed / b.total) * 100).toFixed(1) : 0;
-              return (
-                <tr key={b._id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  <td style={{ padding: '12px 16px', color: '#111827', fontWeight: '500' }}>{b._id}</td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center', color: '#4b5563' }}>{b.total}</td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center', color: '#16a34a', fontWeight: '600' }}>{b.placed}</td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center', color: '#7c3aed', fontWeight: '600' }}>{b.avgCgpa?.toFixed(2)}</td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                    <span style={{
-                      background: pct >= 50 ? '#dcfce7' : '#fee2e2',
-                      color: pct >= 50 ? '#166534' : '#991b1b',
-                      padding: '4px 10px',
-                      borderRadius: '999px',
-                      fontSize: '12px',
-                      fontWeight: '600'
-                    }}>{pct}%</span>
-                  </td>
+      {/* Pending Table */}
+      <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+          ⏳ Pending Approvals ({pendingUsers.length})
+        </h3>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>Loading...</div>
+        ) : pendingUsers.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280', fontSize: '14px' }}>
+            🎉 No pending approvals! All caught up!
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
+                  <th style={{ padding: '12px 8px', color: '#374151' }}>Name</th>
+                  <th style={{ padding: '12px 8px', color: '#374151' }}>Email</th>
+                  <th style={{ padding: '12px 8px', color: '#374151' }}>Role</th>
+                  <th style={{ padding: '12px 8px', color: '#374151' }}>Date</th>
+                  <th style={{ padding: '12px 8px', color: '#374151', textAlign: 'right' }}>Actions</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {pendingUsers.map(user => (
+                  <tr key={user._id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '14px 8px', fontWeight: '600', color: '#111827' }}>
+                      {user.first_name} {user.last_name}
+                    </td>
+                    <td style={{ padding: '14px 8px', color: '#4b5563' }}>{user.email}</td>
+                    <td style={{ padding: '14px 8px' }}>
+                      <span style={{
+                        padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
+                        background: user.role === 'student' ? '#dbeafe' : '#fce7f3',
+                        color: user.role === 'student' ? '#1e40af' : '#9d174d'
+                      }}>
+                        {user.role}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 8px', color: '#6b7280', fontSize: '13px' }}>
+                      {new Date(user.createdAt).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: '14px 8px', textAlign: 'right' }}>
+                      <button onClick={() => handleApprove(user._id)} style={{
+                        padding: '6px 14px', background: '#166534', color: '#fff',
+                        border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', marginRight: '8px'
+                      }}>
+                        ✓ Approve
+                      </button>
+                      <button onClick={() => handleReject(user._id)} style={{
+                        padding: '6px 14px', background: '#fee2e2', color: '#991b1b',
+                        border: '1px solid #fecaca', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer'
+                      }}>
+                        ✕ Reject
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

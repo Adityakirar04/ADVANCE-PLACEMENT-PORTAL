@@ -1,37 +1,38 @@
  const express = require('express');
 const router = express.Router();
 
-const { 
-  getAllStudents, 
-  getStudentById, 
-  getAllCompanies, 
-  verifyCompany,
-  getPlacementStats,
-  getRecentActivity
-} = require('../controllers/tpoController');
-
+// ============================================
+// MIDDLEWARE IMPORT
+// ============================================
+// protect     → JWT verify karega (login hai ya nahi)
+// authorize   → Role check karega (sirf TPO access kar paaye)
+// ============================================
 const { protect, authorize } = require('../middleware/auth');
+
+const {
+  getPendingUsers,
+  approveUser,
+  rejectUser,
+  getAllUsers
+} = require('../controllers/tpoController');
 
 // ============================================
 // TPO ROUTES
 // ============================================
+// Har route pe pehle 'protect' chalega (login check),
+// phir 'authorize("tpo")' chalega (sirf TPO allowed).
+// ============================================
 
-// GET /api/v1/tpo/students
-router.get('/students', protect, authorize('tpo'), getAllStudents);
+// GET  /api/v1/tpo/pending-users   → Pending approvals dekhne ke liye
+router.get('/pending-users', protect, authorize('tpo'), getPendingUsers);
 
-// GET /api/v1/tpo/students/:id
-router.get('/students/:id', protect, authorize('tpo'), getStudentById);
+// PUT  /api/v1/tpo/approve-user/:userId   → User approve karo
+router.put('/approve-user/:userId', protect, authorize('tpo'), approveUser);
 
-// GET /api/v1/tpo/companies
-router.get('/companies', protect, authorize('tpo'), getAllCompanies);
+// PUT  /api/v1/tpo/reject-user/:userId    → User reject karo (reason bhi bhejo body mein)
+router.put('/reject-user/:userId', protect, authorize('tpo'), rejectUser);
 
-// PUT /api/v1/tpo/companies/:id/verify
-router.put('/companies/:id/verify', protect, authorize('tpo'), verifyCompany);
-
-// GET /api/v1/tpo/stats
-router.get('/stats', protect, authorize('tpo'), getPlacementStats);
-
-// GET /api/v1/tpo/activity
-router.get('/activity', protect, authorize('tpo'), getRecentActivity);
+// GET  /api/v1/tpo/all-users       → Sab users + stats dekhne ke liye
+router.get('/all-users', protect, authorize('tpo'), getAllUsers);
 
 module.exports = router;

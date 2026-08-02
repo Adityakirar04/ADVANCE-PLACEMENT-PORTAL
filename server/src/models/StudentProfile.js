@@ -4,71 +4,66 @@ const studentProfileSchema = new mongoose.Schema({
   user_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
-    unique: true
+    required: true
+    // index: true  ← HATA DO (niche schema.index() se ban raha hai)
   },
-  enrollment_number: {
-    type: String,
-    required: true,
-    unique: true
+
+  graduation_year: {
+    type: Number,
+    default: new Date().getFullYear() + 4
   },
+
   branch: {
     type: String,
-    required: true
+    default: 'Computer Science'
   },
-  semester: {
-    type: Number,
-    min: 1,
-    max: 8
+
+  enrollment_number: {
+    type: String,
+    default: ''
   },
+
   cgpa: {
     type: Number,
+    default: 0,
     min: 0,
-    max: 10,
-    default: 0
+    max: 10
   },
+
+  placement_status: {
+    type: String,
+    enum: ['not_placed', 'placed', 'internship', 'higher_studies'],
+    default: 'not_placed'
+  },
+
+  skills: [{
+    type: String
+  }],
+
+  resume_url: {
+    type: String,
+    default: ''
+  },
+
   backlogs: {
     type: Number,
     default: 0
   },
-  graduation_year: {
-    type: Number,
-    required: true
-  },
-  date_of_birth: Date,
-  gender: {
+
+  phone: {
     type: String,
-    enum: ['Male', 'Female', 'Other']
+    default: ''
   },
-  city: String,
-  state: String,
-  linkedin_url: String,
-  github_url: String,
-  resume_url: String,
-  skills: [String],
-  placement_status: {
+
+  address: {
     type: String,
-    enum: ['unplaced', 'placed', 'higher_studies', 'entrepreneur'],
-    default: 'unplaced'
-  },
-  placed_company_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'CompanyProfile',
-    default: null
-  },
-  package_lpa: {
-    type: Number,
-    default: null
+    default: ''
   }
-}, {
-  timestamps: true
-});
 
- 
+}, { timestamps: true });
 
-// ✅ Ye theek hain — inme unique nahi hai
-studentProfileSchema.index({ branch: 1 });
-studentProfileSchema.index({ cgpa: -1 });
+// Single index definition
+studentProfileSchema.index({ user_id: 1 });
 studentProfileSchema.index({ placement_status: 1 });
 
 module.exports = mongoose.model('StudentProfile', studentProfileSchema);

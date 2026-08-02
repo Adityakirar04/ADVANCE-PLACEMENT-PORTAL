@@ -1,51 +1,61 @@
-const mongoose = require('mongoose');
+ const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-// User Schema: Sab roles ke liye common (Student, Company, TPO, Alumni)
 const userSchema = new mongoose.Schema({
-  
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,           // Do users ka email same nahi ho sakta
+  first_name: { 
+    type: String, 
+    required: [true, 'First name is required'] 
+  },
+  last_name: { 
+    type: String, 
+    required: [true, 'Last name is required'] 
+  },
+  email: { 
+    type: String, 
+    required: [true, 'Email is required'], 
+    unique: true,
     lowercase: true,
     trim: true
   },
+  password: { 
+    type: String, 
+    required: [true, 'Password is required'],
+    minlength: [6, 'Password at least 6 characters'],
+    select: false
+  },
+  role: { 
+    type: String, 
+    enum: ['student', 'company', 'tpo'], 
+    required: true 
+  },
   
-  password_hash: {
+  // 🔥 FIX: Static default rakho. Register controller mein explicitly set karenge.
+  // Mongoose default function mein `this.role` unreliable hota hai.
+  approvalStatus: {
     type: String,
-    required: [true, 'Password is required']
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
   },
   
-  role: {
+  rejectionReason: {
     type: String,
-    required: true,
-    enum: ['student', 'company', 'tpo', 'alumni']  // Sirf ye 4 values allowed
-  },
-  
-  first_name: {
-    type: String,
-    required: [true, 'First name is required']
-  },
-  
-  last_name: {
-    type: String,
-    required: [true, 'Last name is required']
-  },
-  
-  phone: String,
-  
-  is_active: {
-    type: Boolean,
-    default: true
-  },
-  
-  is_verified: {
-    type: Boolean,
-    default: false
+    default: ''
   }
-  
-}, {
-  timestamps: true    // createdAt, updatedAt automatically add hoga
+}, { 
+  timestamps: true
 });
+
+userSchema.index({ role: 1 });
+userSchema.index({ approvalStatus: 1 });
+userSchema.index({ createdAt: -1 });
+
+userSchema.pre('save', async function() {
+  if (!this.isModified('password')) return;
+  this.password = await bcrypt.hash(this.password, 10);
+});
+
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
 
 module.exports = mongoose.model('User', userSchema);
