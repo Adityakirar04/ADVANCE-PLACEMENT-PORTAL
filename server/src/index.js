@@ -8,7 +8,7 @@ const path = require('path');
 const app = express();
 
 // ============================================
-// OPTIONAL PACKAGES — Agar installed nahi hain toh skip karo
+// OPTIONAL PACKAGES
 // ============================================
 let compression, rateLimit, helmet;
 
@@ -63,12 +63,12 @@ if (process.env.NODE_ENV !== 'production') {
 // ============================================
 // ROUTES
 // ============================================
-const authRoutes        = require('./routes/authRoutes');
-const jobRoutes         = require('./routes/jobRoutes');
+const authRoutes = require('./routes/authRoutes');
+const jobRoutes = require('./routes/jobRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
-const tpoRoutes         = require('./routes/tpoRoutes');
-const studentRoutes     = require('./routes/studentRoutes');
-const aiRoutes          = require('./routes/aiRoutes');
+const tpoRoutes = require('./routes/tpoRoutes');
+const studentRoutes = require('./routes/studentRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/jobs', jobRoutes);
@@ -77,12 +77,22 @@ app.use('/api/v1/tpo', tpoRoutes);
 app.use('/api/v1/students', studentRoutes);
 app.use('/api/v1/ai', aiRoutes);
 
+// 🔥 SAFE: Notification routes — agar file missing ho toh server crash nahi hoga
+try {
+  const notificationRoutes = require('./routes/notificationRoutes');
+  app.use('/api/v1/notifications', notificationRoutes);
+  console.log('✅ Notification routes loaded');
+} catch (e) {
+  console.log('⚠️  Notification routes not loaded:', e.message);
+  console.log('   Fix: Save notificationRoutes.js in server/src/routes/');
+}
+
 // ============================================
 // HEALTH CHECK
 // ============================================
 app.get('/api/v1/health', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     status: 'healthy',
     ai: process.env.GROQ_API_KEY ? 'AI Ready' : 'AI Key Missing',
     timestamp: new Date().toISOString()
@@ -98,14 +108,14 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err.message);
-  
+
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({ success: false, message: 'File too large (max 5MB)' });
   }
   if (err.message === 'Only PDF, DOC, DOCX allowed') {
     return res.status(400).json({ success: false, message: err.message });
   }
-  
+
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error'
@@ -121,7 +131,7 @@ const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('✅ MongoDB Connected');
-    
+
     app.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
       console.log(`📋 Health check: http://localhost:${PORT}/api/v1/health`);

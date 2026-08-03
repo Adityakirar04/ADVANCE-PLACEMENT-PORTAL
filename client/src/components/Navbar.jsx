@@ -1,6 +1,7 @@
- import { useCallback } from 'react';
+import { useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -94,6 +95,11 @@ const Navbar = () => {
             {user.role === 'tpo' && (
               <Link to="/tpo-dashboard" style={s.link}>Dashboard</Link>
             )}
+
+            {/* 🔥 NOTIFICATION BELL */}
+            <div style={{ marginLeft: '4px', marginRight: '4px' }}>
+              <NotificationBell />
+            </div>
 
             <button type="button" style={s.btn} onClick={handleLogout}>
               Logout
