@@ -1,4 +1,4 @@
- const User = require('../models/User');
+  const User = require('../models/User');
 const StudentProfile = require('../models/StudentProfile');
 const CompanyProfile = require('../models/CompanyProfile');
 const jwt = require('jsonwebtoken');

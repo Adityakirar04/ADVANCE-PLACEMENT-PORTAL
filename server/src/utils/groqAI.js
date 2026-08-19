@@ -1,208 +1,195 @@
- const Groq = require('groq-sdk');
+ // server/src/utils/groqAI.js
+const Groq = require('groq-sdk');
 
 // ============================================
-// SAFETY: Resume parser ko safely import karo
-// Agar import fail ho toh fallback function use karo
+// GROQ AI CONFIGURATION
 // ============================================
-let parseResume;
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+if (!GROQ_API_KEY) {
+  console.error("❌ GROQ_API_KEY not found in .env file!");
+  console.error("   Get your free API key from: https://console.groq.com/keys");
+  console.error("   Add this to your server/.env file:");
+  console.error("   GROQ_API_KEY=gsk_your_actual_key_here");
+}
+
+let groq = null;
 try {
-  const parser = require('./resumeParser');
-  parseResume = parser.parseResume;
-  if (typeof parseResume !== 'function') {
-    console.warn('⚠️ parseResume is not a function, using fallback');
-    parseResume = async () => ({ textPreview: '', skills: [], parseError: 'Parser not available' });
+  if (GROQ_API_KEY) {
+    groq = new Groq({ apiKey: GROQ_API_KEY });
+    console.log("✅ Groq SDK initialized");
   }
-} catch (e) {
-  console.warn('⚠️ resumeParser import failed:', e.message);
-  parseResume = async () => ({ textPreview: '', skills: [], parseError: 'Parser not available' });
+} catch (err) {
+  console.error("❌ Groq SDK init failed:", err.message);
 }
 
 // ============================================
-// GROQ CLIENT INIT
+// WORKING MODELS (Aug 2026) — All old models decommissioned
 // ============================================
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
+// Order: Fast/Cheap first → Powerful last
 const MODELS = [
-  'llama-3.1-8b-instant',
-  'llama-3.3-70b-versatile',
-  'mixtral-8x7b-32768'
+  'openai/gpt-oss-20b',      // Fast, cheap, great for chat
+  'groq/groq/compound-mini', // Groq's own small model
+  'openai/gpt-oss-120b',     // Powerful, for complex tasks
+  'qwen/qwen3.6-27b',        // Good alternative
+  'groq/groq/compound'       // Groq's own large model
 ];
 
-async function getWorkingModel() {
+// ============================================
+// CORE: Call Groq with model fallback
+// ============================================
+const callGroq = async (messages, options = {}) => {
+  if (!groq) {
+    throw new Error('Groq API key missing. Add GROQ_API_KEY to server/.env');
+  }
+
+  let lastError = null;
+
   for (const model of MODELS) {
     try {
-      await groq.chat.completions.create({
+      console.log(`🤖 Trying model: ${model}`);
+
+      const completion = await groq.chat.completions.create({
+        messages,
         model,
-        messages: [{ role: 'user', content: 'Hi' }],
-        max_tokens: 5
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.max_tokens ?? 2000,
+        response_format: options.jsonMode ? { type: 'json_object' } : undefined
       });
-      console.log('✅ Groq model active:', model);
-      return model;
+
+      console.log(`✅ Model ${model} responded successfully`);
+      return completion;
+
     } catch (err) {
-      if (err.message?.includes('decommissioned') || err.status === 404) {
-        console.log('❌ Model decommissioned:', model);
+      lastError = err;
+      console.warn(`⚠️  Model ${model} failed:`, err.message);
+
+      // Auth error = stop immediately
+      if (err.status === 401) {
+        throw new Error('Invalid Groq API key. Check console.groq.com/keys');
+      }
+
+      // Rate limit = stop
+      if (err.status === 429) {
+        throw new Error('Groq rate limit reached. Wait a few seconds and try again.');
+      }
+
+      // Model not found/decommissioned = try next
+      if (err.status === 404 || err.message?.includes('decommissioned') || err.message?.includes('model')) {
+        console.warn(`   → Model ${model} not available, trying next...`);
         continue;
       }
-      throw err;
+
+      // Other error = try next model
+      continue;
     }
   }
-  throw new Error('No Groq model available. Check API key at console.groq.com');
-}
 
-function extractJSON(text) {
-  let cleaned = text
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/gi, '')
-    .trim();
-
-  try {
-    if (cleaned.startsWith('[') || cleaned.startsWith('{')) {
-      return JSON.parse(cleaned);
-    }
-    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
-    const objMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (arrMatch) return JSON.parse(arrMatch[0]);
-    if (objMatch) return JSON.parse(objMatch[0]);
-  } catch (e) {
-    console.error('JSON parse failed:', e.message);
-  }
-  throw new Error('AI se valid JSON nahi mila');
-}
-
-async function callGroq(prompt) {
-  const model = await getWorkingModel();
-  const chat = await groq.chat.completions.create({
-    model,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.7,
-    max_tokens: 2500,
-  });
-  return chat.choices[0].message.content;
-}
+  throw new Error(`All models failed. Last error: ${lastError?.message}`);
+};
 
 // ============================================
-// AI RESUME ANALYZER
+// 1. RESUME ANALYZER
 // ============================================
-async function analyzeResumeWithAI(buffer, mimetype, branch, role = 'Software Engineer') {
-  try {
-    // STEP 1: Parse resume
-    const parsed = await parseResume(buffer, mimetype);
-    const text = parsed.textPreview || '';
-    const skills = parsed.skills || [];
+const analyzeResume = async (resumeText, jobDescription = '') => {
+  const prompt = `You are an expert HR recruiter. Analyze this resume and return JSON.
 
-    console.log('📄 Resume parsed — Text length:', text.length, '| Skills found:', skills.length);
+RESUME:
+${resumeText.substring(0, 3000)}
 
-    if (!text.trim() && !skills.length) {
-      throw new Error(parsed.parseError || 'Resume se text extract nahi ho paaya. Text-based PDF upload karo.');
-    }
+${jobDescription ? `JOB:
+${jobDescription.substring(0, 1000)}
+` : ''}
 
-    // STEP 2: AI Prompt
-    const prompt = `You are an expert ATS analyzer. Analyze this resume for a ${branch} student targeting ${role}.
-
-Resume Text:
-${text.substring(0, 4500)}
-
-Extracted Skills: ${skills.join(', ') || 'None'}
-
-Return ONLY JSON:
+Return ONLY this JSON:
 {
-  "atsScore": 72,
-  "grade": "B",
-  "skillsFound": ["JavaScript", "React"],
-  "missingSkills": ["Docker", "AWS"],
-  "suggestions": ["Add metrics", "Include GitHub"],
-  "summary": "Strong skills but needs...",
-  "strengths": ["Good projects"],
-  "weaknesses": ["No numbers"]
-}
+  "skills_found": ["skill1", "skill2"],
+  "skills_missing": ["skill3"],
+  "match_score": 75,
+  "strengths": "...",
+  "improvements": "...",
+  "overall_feedback": "..."
+}`;
 
-Return ONLY the JSON object. Nothing else.`;
+  const completion = await callGroq(
+    [{ role: 'user', content: prompt }],
+    { temperature: 0.2, max_tokens: 1500, jsonMode: true }
+  );
 
-    const response = await callGroq(prompt);
-    console.log('🤖 AI Response preview:', response.substring(0, 300));
+  const parsed = JSON.parse(completion.choices[0].message.content);
+  return {
+    skills_found: parsed.skills_found || [],
+    skills_missing: parsed.skills_missing || [],
+    match_score: typeof parsed.match_score === 'number' ? parsed.match_score : 50,
+    strengths: parsed.strengths || '',
+    improvements: parsed.improvements || '',
+    overall_feedback: parsed.overall_feedback || ''
+  };
+};
 
-    const data = extractJSON(response);
-    const atsScore = Number(data.atsScore) || 0;
+// ============================================
+// 2. INTERVIEW PREP
+// ============================================
+const generateInterviewQuestions = async (role, experience = 'entry') => {
+  const prompt = `Generate 10 interview questions for ${role} (${experience} level).
 
-    return {
-      atsScore,
-      grade: data.grade || 'C',
-      skillsFound: Array.isArray(data.skillsFound) ? data.skillsFound : [],
-      missingSkills: Array.isArray(data.missingSkills) ? data.missingSkills : [],
-      suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
-      summary: data.summary || '',
-      strengths: Array.isArray(data.strengths) ? data.strengths : [],
-      weaknesses: Array.isArray(data.weaknesses) ? data.weaknesses : [],
-      checks: {
-        skills:   { score: Math.round((atsScore / 100) * 30), max: 30, label: 'Skills Match' },
-        sections: { score: Math.round((atsScore / 100) * 25), max: 25, label: 'Experience' },
-        keywords: { score: Math.round((atsScore / 100) * 20), max: 20, label: 'Keywords' },
-        length:   { score: Math.round((atsScore / 100) * 15), max: 15, label: 'Length' },
-        format:   { score: Math.round((atsScore / 100) * 10), max: 10, label: 'Format' }
-      },
-      aiSuccess: true
-    };
-
-  } catch (err) {
-    console.error('❌ Resume Analysis Error:', err.message);
-    return {
-      atsScore: 0, grade: 'N/A',
-      skillsFound: [], missingSkills: [],
-      suggestions: ['⚠️ AI analysis failed. Try again.'],
-      summary: `Error: ${err.message}`,
-      strengths: [], weaknesses: [],
-      checks: {
-        skills: { score: 0, max: 30, label: 'Skills Match' },
-        sections: { score: 0, max: 25, label: 'Experience' },
-        keywords: { score: 0, max: 20, label: 'Keywords' },
-        length: { score: 0, max: 15, label: 'Length' },
-        format: { score: 0, max: 10, label: 'Format' }
-      },
-      aiSuccess: false
-    };
-  }
-}
-
-async function generateInterviewQuestionsWithAI(role, skills, count = 10) {
-  const prompt = `Generate ${count} interview questions for "${role}". Skills: ${skills?.join(', ') || 'General'}
-
-Mix: 40% Technical, 30% Coding, 20% System Design, 10% HR.
-
-Return ONLY JSON array:
-[{"q": "...", "type": "Technical", "difficulty": "Medium"}]
-
-Return ONLY JSON array. No markdown.`;
-
-  const response = await callGroq(prompt);
-  return extractJSON(response);
-}
-
-async function chatWithAI(message, history = []) {
-  const cleanHistory = [];
-  let expectUser = true;
-  for (const h of history) {
-    const role = h.role === 'user' ? 'user' : 'assistant';
-    if ((expectUser && role === 'user') || (!expectUser && role === 'assistant')) {
-      cleanHistory.push({ role, content: h.text });
-      expectUser = !expectUser;
+Return ONLY this JSON:
+{
+  "questions": [
+    {
+      "question": "...",
+      "type": "technical",
+      "difficulty": "easy",
+      "hint": "..."
     }
-  }
-  if (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role === 'user') {
-    cleanHistory.pop();
-  }
+  ]
+}`;
 
-  const model = await getWorkingModel();
-  const chat = await groq.chat.completions.create({
-    model,
-    messages: [...cleanHistory, { role: 'user', content: message }],
-    temperature: 0.7,
-    max_tokens: 2000,
-  });
-  return chat.choices[0].message.content;
-}
+  const completion = await callGroq(
+    [{ role: 'user', content: prompt }],
+    { temperature: 0.4, max_tokens: 2000, jsonMode: true }
+  );
 
+  const parsed = JSON.parse(completion.choices[0].message.content);
+  return { questions: parsed.questions || [] };
+};
+
+// ============================================
+// 3. AI CHAT
+// ============================================
+const chatWithAI = async (message, chatHistory = []) => {
+  const systemPrompt = `You are an AI Placement Assistant for "Smart Placement" college portal.
+Help students with resume tips, interview prep, career guidance, and technical concepts.
+Be friendly, helpful, and concise. Reply in Hinglish if user uses Hindi.
+Keep responses under 300 words.`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...chatHistory.slice(-6).map(msg => ({
+      role: msg.role,
+      content: msg.content
+    })),
+    { role: 'user', content: message }
+  ];
+
+  const completion = await callGroq(
+    messages,
+    { temperature: 0.7, max_tokens: 1000 }
+  );
+
+  return {
+    response: completion.choices[0].message.content,
+    success: true
+  };
+};
+
+// ============================================
+// EXPORTS
+// ============================================
 module.exports = {
-  analyzeResumeWithAI,
-  generateInterviewQuestionsWithAI,
+  analyzeResume,
+  generateInterviewQuestions,
   chatWithAI,
+  groqInitialized: !!groq
 };

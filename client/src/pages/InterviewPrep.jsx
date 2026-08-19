@@ -1,133 +1,161 @@
- import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../context/AuthContext.jsx';
+ // client/src/pages/InterviewPrep.jsx
+import { useState } from 'react';
+
+const ROLES = [
+  'SDE', 'Frontend Developer', 'Backend Developer', 'Full Stack Developer',
+  'Data Scientist', 'DevOps Engineer', 'Cloud Architect', 'Mobile Developer',
+  'UI/UX Designer', 'Product Manager', 'QA Engineer', 'System Administrator'
+];
 
 const InterviewPrep = () => {
-  const { api } = useAuth();
-  const [roles, setRoles] = useState([]);
   const [selectedRole, setSelectedRole] = useState('');
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    api.get('/ai/interview-roles')
-      .then(res => setRoles(res.data.data || []))
-      .catch(err => {
-        console.error(err);
-        setError('Failed to load roles');
-      });
-  }, [api]);
+  const generateQuestions = async () => {
+    if (!selectedRole) {
+      setError('Please select a job role first!');
+      return;
+    }
 
-  const handleGenerate = useCallback(async () => {
-    if (!selectedRole) return alert('Select a role first');
     setLoading(true);
     setError('');
     setQuestions([]);
-    
+
     try {
-      const res = await api.post('/ai/interview-questions', { role: selectedRole, count: 12 });
-      setQuestions(res.data.data.questions || []);
+      const token = localStorage.getItem('token');
+
+      const res = await fetch('/api/v1/ai/interview-prep', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ role: selectedRole, experience: 'entry' })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setQuestions(data.data?.questions || []);
+      } else {
+        setError(data.message || 'Failed to generate questions');
+      }
     } catch (err) {
-      const msg = err.response?.data?.message || err.message;
-      setError('Failed: ' + msg);
-      alert('❌ ' + msg);
+      console.error('Interview Prep Error:', err);
+      setError('Network error. Please check your connection.');
     } finally {
       setLoading(false);
     }
-  }, [api, selectedRole]);
+  };
 
-  const typeColors = {
-    'Technical': { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-    'Coding': { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
-    'System Design': { bg: '#f3e8ff', color: '#7e22ce', border: '#d8b4fe' },
-    'HR/Behavioral': { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' }
+  const getDifficultyColor = (difficulty) => {
+    switch (difficulty) {
+      case 'easy': return '#4caf50';
+      case 'medium': return '#ff9800';
+      case 'hard': return '#f44336';
+      default: return '#888';
+    }
+  };
+
+  const getTypeIcon = (type) => {
+    switch (type) {
+      case 'technical': return '💻';
+      case 'behavioral': return '🗣️';
+      case 'scenario': return '🎯';
+      default: return '❓';
+    }
   };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px', background: '#f3f4f6', minHeight: '100vh' }}>
-      <h2 style={{ color: '#111827', marginBottom: '8px', fontSize: '24px', fontWeight: '700' }}>
-        🎯 AI Interview Generator
-      </h2>
-      <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>
-        Select your target role and get AI-generated interview questions tailored to your skills.
-      </p>
+    <div style={styles.container}>
+      <h1 style={styles.heading}>🎯 AI Interview Prep</h1>
+      <p style={styles.subheading}>Select your target role and get AI-generated interview questions</p>
 
+      {/* Role Selector */}
+      <div style={styles.selectorBox}>
+        <label style={styles.label}>Select Job Role</label>
+        <select
+          value={selectedRole}
+          onChange={(e) => setSelectedRole(e.target.value)}
+          style={styles.select}
+        >
+          <option value="">-- Choose a role --</option>
+          {ROLES.map(role => (
+            <option key={role} value={role}>{role}</option>
+          ))}
+        </select>
+
+        <button
+          onClick={generateQuestions}
+          disabled={loading}
+          style={styles.generateBtn(loading)}
+        >
+          {loading ? '⏳ Generating...' : '🚀 Generate Questions'}
+        </button>
+      </div>
+
+      {/* Error */}
       {error && (
-        <div style={{ background: '#fee2e2', color: '#991b1b', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
-          ⚠️ {error}
+        <div style={styles.errorBox}>
+          ❌ {error}
         </div>
       )}
 
-      <div style={{ background: '#ffffff', borderRadius: '12px', padding: '24px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e5e7eb' }}>
-        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
-          Select Job Role
-        </label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
-          <select
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-            style={{
-              flex: 1, minWidth: '200px', padding: '10px 14px',
-              border: '1px solid #d1d5db', borderRadius: '8px',
-              fontSize: '14px', color: '#111827', outline: 'none', background: '#ffffff'
-            }}
-          >
-            <option value="">-- Choose Role --</option>
-            {roles.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-          <button
-            onClick={handleGenerate}
-            disabled={loading || !selectedRole}
-            style={{
-              padding: '10px 24px',
-              background: loading ? '#9ca3af' : '#1e3a8a',
-              color: '#ffffff', border: 'none', borderRadius: '8px',
-              fontSize: '14px', fontWeight: '600',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loading ? '⏳ Generating...' : '⚡ Generate Questions'}
-          </button>
-        </div>
-      </div>
-
+      {/* Questions List */}
       {questions.length > 0 && (
-        <div style={{ background: '#ffffff', borderRadius: '12px', padding: '24px', border: '1px solid #e5e7eb' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>
-              📝 Questions for {selectedRole}
-            </h3>
-            <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '500' }}>
-              {questions.length} questions • AI Powered
-            </span>
-          </div>
+        <div style={styles.questionsContainer}>
+          <h2 style={styles.questionsHeading}>
+            📋 {questions.length} Questions for {selectedRole}
+          </h2>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {questions.map((item, idx) => {
-              const style = typeColors[item.type] || typeColors['Technical'];
-              return (
-                <div key={idx} style={{
-                  padding: '16px', borderRadius: '10px', background: style.bg,
-                  border: `1px solid ${style.border}`, display: 'flex', gap: '12px', alignItems: 'flex-start'
-                }}>
-                  <span style={{
-                    fontSize: '11px', fontWeight: '700', color: style.color,
-                    background: '#ffffff', padding: '3px 10px', borderRadius: '6px', whiteSpace: 'nowrap', marginTop: '2px'
-                  }}>
-                    {item.type} • {item.difficulty || 'Medium'}
-                  </span>
-                  <div>
-                    <span style={{ fontSize: '14px', color: '#6b7280', marginRight: '6px' }}>Q{idx + 1}.</span>
-                    <span style={{ fontSize: '15px', color: '#111827', fontWeight: '500' }}>{item.q}</span>
-                  </div>
+          {questions.map((q, index) => (
+            <div key={index} style={styles.questionCard}>
+              <div style={styles.questionHeader}>
+                <span style={styles.questionNumber}>Q{index + 1}</span>
+                <span style={styles.typeBadge}>{getTypeIcon(q.type)} {q.type}</span>
+                <span style={{ ...styles.difficultyBadge, background: getDifficultyColor(q.difficulty) + '20', color: getDifficultyColor(q.difficulty) }}>
+                  {q.difficulty}
+                </span>
+              </div>
+
+              <p style={styles.questionText}>{q.question}</p>
+
+              {q.hint && (
+                <div style={styles.hintBox}>
+                  <span style={styles.hintLabel}>💡 Hint:</span>
+                  <span style={styles.hintText}>{q.hint}</span>
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
+};
+
+const styles = {
+  container: { padding: '20px', maxWidth: '900px', margin: '0 auto' },
+  heading: { fontSize: '32px', color: '#1a1a2e', marginBottom: '8px' },
+  subheading: { fontSize: '16px', color: '#666', marginBottom: '25px' },
+  selectorBox: { background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', marginBottom: '25px' },
+  label: { display: 'block', fontSize: '14px', fontWeight: '600', color: '#444', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  select: { width: '100%', padding: '12px 15px', fontSize: '16px', borderRadius: '8px', border: '2px solid #e0e0e0', marginBottom: '15px', background: 'white', cursor: 'pointer' },
+  generateBtn: (loading) => ({ width: '100%', padding: '12px', fontSize: '16px', fontWeight: '600', background: loading ? '#ccc' : '#e94560', color: 'white', border: 'none', borderRadius: '8px', cursor: loading ? 'not-allowed' : 'pointer' }),
+  errorBox: { background: '#ffebee', border: '1px solid #ef9a9a', padding: '15px', borderRadius: '8px', marginBottom: '20px', color: '#c62828' },
+  questionsContainer: { marginTop: '20px' },
+  questionsHeading: { fontSize: '22px', color: '#1a1a2e', marginBottom: '15px' },
+  questionCard: { background: 'white', padding: '20px', borderRadius: '10px', marginBottom: '15px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #e94560' },
+  questionHeader: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' },
+  questionNumber: { background: '#e94560', color: 'white', width: '30px', height: '30px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' },
+  typeBadge: { background: '#e3f2fd', color: '#1565c0', padding: '3px 10px', borderRadius: '6px', fontSize: '12px' },
+  difficultyBadge: { padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', textTransform: 'capitalize' },
+  questionText: { fontSize: '16px', color: '#333', lineHeight: '1.5', marginBottom: '10px', fontWeight: '500' },
+  hintBox: { background: '#f5f5f5', padding: '10px 15px', borderRadius: '6px', display: 'flex', gap: '8px', alignItems: 'flex-start' },
+  hintLabel: { fontSize: '13px', fontWeight: '600', color: '#666', whiteSpace: 'nowrap' },
+  hintText: { fontSize: '13px', color: '#777', lineHeight: '1.4' }
 };
 
 export default InterviewPrep;

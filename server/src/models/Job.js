@@ -1,73 +1,85 @@
- const mongoose = require('mongoose');
+ // server/src/models/Job.js
+const mongoose = require('mongoose');
 
 const jobSchema = new mongoose.Schema({
-  company_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-    // index: true  ← HATA DO (niche schema.index() se ban raha hai)
-  },
-
-  company_name: {
-    type: String,
-    default: 'N/A'
-  },
-
   title: {
     type: String,
     required: [true, 'Job title is required'],
     trim: true
   },
-
   description: {
     type: String,
+    required: [true, 'Job description is required']
+  },
+
+  // Company reference
+  company_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
     required: true
   },
+  company_name: {
+    type: String,
+    required: true,
+    default: 'Unknown Company'
+  },
 
+  // Job details
   location: {
     type: String,
-    default: ''
+    default: 'Not Specified'
   },
-
-  salary_range: {
+  job_type: {
     type: String,
-    default: ''
+    enum: ['full-time', 'part-time', 'internship', 'contract'],
+    default: 'full-time'
   },
 
-  required_skills: [{
-    type: String
-  }],
-
-  eligible_branches: [{
-    type: String
-  }],
-
-  min_cgpa: {
-    type: Number,
-    default: 0
+  // Salary with proper structure
+  salary: {
+    min: { type: Number, default: 0 },
+    max: { type: Number, default: 0 },
+    currency: { type: String, default: 'INR' }
   },
 
-  max_backlogs: {
-    type: Number,
-    default: 0
+  // Requirements
+  requirements: {
+    cgpa: { type: Number, default: 0 },
+    backlogs: { type: Number, default: 0 },
+    branches: { type: [String], default: ['Computer Science', 'Information Technology'] }
   },
 
+  // Skills
+  skills_required: {
+    type: [String],
+    default: []
+  },
+
+  // Status
   status: {
     type: String,
-    enum: ['active', 'closed'],
+    enum: ['active', 'closed', 'draft'],
     default: 'active'
   },
 
-  posted_by: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  // TPO approval
+  isApproved: {
+    type: Boolean,
+    default: true
+  },
+
+  // Application count (denormalized)
+  application_count: {
+    type: Number,
+    default: 0
   }
+}, {
+  timestamps: true
+});
 
-}, { timestamps: true });
-
-// Single index definitions
+// Indexes for performance
+jobSchema.index({ status: 1, createdAt: -1 });
 jobSchema.index({ company_id: 1 });
-jobSchema.index({ status: 1 });
-jobSchema.index({ createdAt: -1 });
+jobSchema.index({ 'requirements.cgpa': 1 });
 
 module.exports = mongoose.model('Job', jobSchema);

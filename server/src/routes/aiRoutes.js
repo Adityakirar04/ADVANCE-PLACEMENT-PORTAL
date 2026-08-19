@@ -1,97 +1,55 @@
- const express = require('express');
+ // server/src/routes/aiRoutes.js
+const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { protect } = require('../middleware/auth');
+const { analyzeResume, generateInterviewQuestions, chatWithAI } = require('../utils/groqAI');
 
-const { protect, authorize } = require('../middleware/auth');
-const { analyzeResumeWithAI, generateInterviewQuestionsWithAI, chatWithAI } = require('../utils/groqAI');
-const StudentProfile = require('../models/StudentProfile');
+// ============================================
+// AI ROUTES — Real Groq AI Only
+// ============================================
 
-const uploadDir = path.join(__dirname, '../../uploads/resumes');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.pdf', '.doc', '.docx'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('Only PDF, DOC, DOCX allowed'));
-  }
-});
-
-router.post('/analyze-resume', protect, authorize('student'), upload.single('resume'), async (req, res) => {
+// Resume Analyzer
+router.post('/analyze-resume', protect, async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No resume uploaded' });
+    const { resumeText, jobDescription } = req.body;
+    if (!resumeText) {
+      return res.status(400).json({ success: false, message: 'Resume text required' });
     }
-
-    console.log('📥 File:', req.file.originalname, '| Type:', req.file.mimetype, '| Size:', req.file.size);
-
-    const profile = await StudentProfile.findOne({ user_id: req.user.userId || req.user.id }).lean();
-    const branch = profile?.branch || 'Computer Science';
-
-    const analysis = await analyzeResumeWithAI(req.file.buffer, req.file.mimetype, branch);
-
-    const ext = path.extname(req.file.originalname);
-    const filename = `${Date.now()}-${req.user.userId || req.user.id}${ext}`;
-    fs.writeFileSync(path.join(uploadDir, filename), req.file.buffer);
-
-    res.json({
-      success: true,
-      data: {
-        ...analysis,
-        resume_url: `${req.protocol}://${req.get('host')}/uploads/resumes/${filename}`
-      }
-    });
-  } catch (err) {
-    console.error('❌ Analyze route error:', err);
-    res.status(500).json({ success: false, message: err.message || 'Analysis failed' });
+    const analysis = await analyzeResume(resumeText, jobDescription);
+    res.json({ success: true, data: analysis });
+  } catch (error) {
+    console.error('Analyze Resume Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-router.get('/interview-roles', protect, async (req, res) => {
-  const roles = [
-    'Java Developer', 'React Developer', 'Node.js Developer',
-    'Python Developer', 'Data Scientist', 'Full Stack Developer',
-    'SDE', 'DevOps Engineer', 'AI/ML Engineer', 'Mobile Developer',
-    'Cloud Architect', 'Cybersecurity Analyst'
-  ];
-  res.json({ success: true, data: roles });
-});
-
-router.post('/interview-questions', protect, async (req, res) => {
+// Interview Prep
+router.post('/interview-prep', protect, async (req, res) => {
   try {
-    const { role, count = 10 } = req.body;
-    if (!role) return res.status(400).json({ success: false, message: 'Role required' });
-
-    const profile = await StudentProfile.findOne({ user_id: req.user.userId || req.user.id }).lean();
-    const skills = profile?.skills || [];
-
-    const questions = await generateInterviewQuestionsWithAI(role, skills, parseInt(count) || 10);
-
-    res.json({
-      success: true,
-      data: { role, totalQuestions: questions.length, questions }
-    });
-  } catch (err) {
-    console.error('❌ Interview error:', err);
-    res.status(500).json({ success: false, message: err.message });
+    const { role, experience } = req.body;
+    if (!role) {
+      return res.status(400).json({ success: false, message: 'Role is required' });
+    }
+    const result = await generateInterviewQuestions(role, experience || 'entry');
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Interview Prep Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
+// AI Chat
 router.post('/chat', protect, async (req, res) => {
   try {
     const { message, history } = req.body;
-    if (!message?.trim()) return res.status(400).json({ success: false, message: 'Message required' });
-
-    const reply = await chatWithAI(message.trim(), history || []);
-    res.json({ success: true, data: { reply } });
-  } catch (err) {
-    console.error('❌ Chat error:', err);
-    res.status(500).json({ success: false, message: err.message });
+    if (!message) {
+      return res.status(400).json({ success: false, message: 'Message is required' });
+    }
+    const result = await chatWithAI(message, history || []);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('AI Chat Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

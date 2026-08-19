@@ -1,38 +1,63 @@
- const express = require('express');
+ // server/src/routes/tpoRoutes.js
+const express = require('express');
 const router = express.Router();
-
-// ============================================
-// MIDDLEWARE IMPORT
-// ============================================
-// protect     → JWT verify karega (login hai ya nahi)
-// authorize   → Role check karega (sirf TPO access kar paaye)
-// ============================================
 const { protect, authorize } = require('../middleware/auth');
+const User = require('../models/User');
 
-const {
-  getPendingUsers,
-  approveUser,
-  rejectUser,
-  getAllUsers
-} = require('../controllers/tpoController');
+// Get all pending approvals
+router.get('/pending-users', protect, authorize('tpo'), async (req, res) => {
+  try {
+    const users = await User.find({
+      role: { $in: ['student', 'company'] },
+      isApproved: false
+    }).select('-password');
 
-// ============================================
-// TPO ROUTES
-// ============================================
-// Har route pe pehle 'protect' chalega (login check),
-// phir 'authorize("tpo")' chalega (sirf TPO allowed).
-// ============================================
+    res.json({ success: true, count: users.length, data: users });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
-// GET  /api/v1/tpo/pending-users   → Pending approvals dekhne ke liye
-router.get('/pending-users', protect, authorize('tpo'), getPendingUsers);
+// Approve a user
+router.put('/approve/:id', protect, authorize('tpo'), async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { isApproved: true },
+      { new: true }
+    ).select('-password');
 
-// PUT  /api/v1/tpo/approve-user/:userId   → User approve karo
-router.put('/approve-user/:userId', protect, authorize('tpo'), approveUser);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
-// PUT  /api/v1/tpo/reject-user/:userId    → User reject karo (reason bhi bhejo body mein)
-router.put('/reject-user/:userId', protect, authorize('tpo'), rejectUser);
+    res.json({ success: true, message: `${user.first_name} approved!`, data: user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
-// GET  /api/v1/tpo/all-users       → Sab users + stats dekhne ke liye
-router.get('/all-users', protect, authorize('tpo'), getAllUsers);
+// Reject/Delete a user
+router.delete('/reject/:id', protect, authorize('tpo'), async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    res.json({ success: true, message: 'User rejected and removed' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get all users
+router.get('/all-users', protect, authorize('tpo'), async (req, res) => {
+  try {
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    res.json({ success: true, count: users.length, data: users });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 module.exports = router;

@@ -1,4 +1,4 @@
- import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+  import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext.jsx';
 import Navbar from './components/Navbar.jsx';
 import PrivateRoute from './components/PrivateRoute.jsx';
@@ -14,6 +14,7 @@ import CompanyApplications from './pages/CompanyApplications.jsx';
 import ResumeAnalyzer from './pages/ResumeAnalyzer.jsx';
 import InterviewPrep from './pages/InterviewPrep.jsx';
 import AIChat from './pages/AIChat.jsx';
+ 
 
 function App() {
   return (

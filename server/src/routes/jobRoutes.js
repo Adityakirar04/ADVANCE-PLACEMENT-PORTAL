@@ -1,6 +1,9 @@
- const express = require('express');
+ // server/src/routes/jobRoutes.js
+const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
+
+// Import controllers
 const {
   postJob,
   getAllJobs,
@@ -13,35 +16,21 @@ const {
 } = require('../controllers/jobController');
 
 // ============================================
-// IMPORTANT: Specific routes BEFORE /:id
+// JOB ROUTES — SPECIFIC FIRST, GENERIC LAST
 // ============================================
 
-// GET /api/v1/jobs/my-jobs — MUST be before /:id
-router.get('/my-jobs', protect, authorize('company'), getMyJobs);
+// Public / Student routes
+router.get('/', protect, getAllJobs);                    // GET /api/v1/jobs
+router.get('/with-match', protect, authorize('student'), getJobsWithMatch);  // GET /api/v1/jobs/with-match
+router.get('/my-jobs', protect, authorize('company'), getMyJobs);              // GET /api/v1/jobs/my-jobs
+router.post('/fix-company-names', protect, authorize('tpo'), fixCompanyNames); // POST /api/v1/jobs/fix-company-names
 
-// GET /api/v1/jobs/with-match — MUST be before /:id
-router.get('/with-match', protect, authorize('student'), getJobsWithMatch);
+// Generic ID route — MUST BE LAST
+router.get('/:id', protect, getJob);                   // GET /api/v1/jobs/:id
 
-// GET /api/v1/jobs/fix-company-names — MUST be before /:id
-router.post('/fix-company-names', protect, authorize('tpo'), fixCompanyNames);
-
-// ============================================
-// Generic routes AFTER specific routes
-// ============================================
-
-// GET /api/v1/jobs — All jobs
-router.get('/', protect, getAllJobs);
-
-// GET /api/v1/jobs/:id — Single job
-router.get('/:id', protect, getJob);
-
-// POST /api/v1/jobs — Create job
+// Company routes
 router.post('/', protect, authorize('company'), postJob);
-
-// PUT /api/v1/jobs/:id — Update job
 router.put('/:id', protect, authorize('company'), updateJob);
-
-// DELETE /api/v1/jobs/:id — Delete job
 router.delete('/:id', protect, authorize('company'), deleteJob);
 
 module.exports = router;

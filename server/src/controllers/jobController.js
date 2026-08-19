@@ -1,161 +1,269 @@
- const Job = require('../models/Job');
+ // server/src/controllers/jobController.js
+const Job = require('../models/Job');
 const CompanyProfile = require('../models/CompanyProfile');
-const StudentProfile = require('../models/StudentProfile');
 const User = require('../models/User');
-const { notifyAllStudents } = require('../controllers/notificationController');
+const StudentProfile = require('../models/StudentProfile');
+const Notification = require('../models/Notification');
 
 // ============================================
-// POST JOB — Save company_name properly
+// POST A NEW JOB (Company only)
 // ============================================
 exports.postJob = async (req, res) => {
   try {
-    const companyProfile = await CompanyProfile.findOne({ user_id: req.user.userId });
+    const companyId = req.user.id;
 
-    if (!companyProfile) {
+    // Step 1: Get company name from profile or user
+    let companyName = null;
+    const companyProfile = await CompanyProfile.findOne({ user_id: companyId });
+
+    if (companyProfile && companyProfile.company_name && companyProfile.company_name.trim() !== '') {
+      companyName = companyProfile.company_name.trim();
+    } else {
+      // Fallback: Use user's first + last name
+      const user = await User.findById(companyId);
+      if (user) {
+        companyName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+      }
+    }
+
+    if (!companyName) {
       return res.status(400).json({
         success: false,
-        message: 'Company profile not found. Please update your profile first.'
+        message: 'Company name is empty. Please update your company profile first.'
       });
     }
 
-    let companyName = companyProfile.company_name?.trim();
+    // Step 2: Clean salary data
+    const salary = req.body.salary || {};
+    const cleanSalary = {
+      min: Number(salary.min) || 0,
+      max: Number(salary.max) || 0,
+      currency: salary.currency || 'INR'
+    };
 
-    if (!companyName) {
-      // 🔥 FALLBACK: User se name lao
-      const user = await User.findById(req.user.userId).select('first_name last_name');
-      companyName = user ? `${user.first_name} ${user.last_name}`.trim() : 'Unknown Company';
+    // Step 3: Clean requirements data
+    const requirements = req.body.requirements || {};
+    const cleanRequirements = {
+      cgpa: Number(requirements.cgpa) || 0,
+      backlogs: Number(requirements.backlogs) || 0,
+      branches: Array.isArray(requirements.branches) ? requirements.branches : 
+                (requirements.branches ? [requirements.branches] : ['Computer Science', 'Information Technology'])
+    };
+
+    // Step 4: Create job
+    const jobData = {
+      ...req.body,
+      company_id: companyId,
+      company_name: companyName,
+      salary: cleanSalary,
+      requirements: cleanRequirements,
+      status: req.body.status || 'active',
+      isApproved: req.body.isApproved !== undefined ? req.body.isApproved : true
+    };
+
+    const job = await Job.create(jobData);
+
+    console.log(`🏢 Job posted: ${job.title} | Company: ${job.company_name}`);
+
+    // Step 5: Send notifications to all approved students
+    try {
+      const students = await User.find({
+        role: 'student',
+        isApproved: true
+      }).select('_id');
+
+      if (students.length > 0) {
+        const notifications = students.map(student => ({
+          user_id: student._id,
+          message: `New job posted: ${job.title} at ${job.company_name}`,
+          type: 'job_posted',
+          related_id: job._id
+        }));
+
+        await Notification.insertMany(notifications);
+        console.log(`📧 Sent ${notifications.length} notifications to students`);
+      }
+    } catch (notifErr) {
+      console.error('Notification error (non-critical):', notifErr.message);
     }
 
-    console.log('🏢 Posting job for company:', companyName);
-
-    const job = await Job.create({
-      ...req.body,
-      company_id: req.user.userId,
-      company_name: companyName,
-      posted_by: req.user.userId
+    res.status(201).json({
+      success: true,
+      data: job,
+      message: 'Job posted successfully!'
     });
 
-    console.log('✅ Job posted:', job.title, '| Company:', job.company_name);
-
-    await notifyAllStudents(
-      '📢 New Job Posted!',
-      `${companyName} posted a new job: ${job.title}`,
-      '/jobs'
-    );
-
-    res.status(201).json({ success: true, data: job });
   } catch (error) {
-    console.error('❌ Post job error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Post Job Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to post job'
+    });
   }
 };
 
 // ============================================
-// GET ALL JOBS — With User fallback for company name
+// GET ALL JOBS (For Students)
 // ============================================
 exports.getAllJobs = async (req, res) => {
   try {
-    const jobs = await Job.find().sort({ createdAt: -1 }).lean();
-
-    if (jobs.length === 0) {
-      return res.status(200).json({ success: true, count: 0, data: [] });
+    // Get student's skills for matching
+    let studentSkills = [];
+    try {
+      const studentProfile = await StudentProfile.findOne({ user_id: req.user.id });
+      if (studentProfile && studentProfile.skills) {
+        studentSkills = studentProfile.skills.map(s => s.toLowerCase().trim());
+      }
+    } catch (e) {
+      console.log('Student profile not found for matching');
     }
 
-    const companyIds = [...new Set(
-      jobs.map(j => j.company_id?.toString()).filter(Boolean)
-    )];
+    // Fetch all active jobs
+    const jobs = await Job.find({ status: 'active' })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    console.log('🔍 Looking up companies:', companyIds.length);
+    console.log(`🔍 Found ${jobs.length} active jobs`);
 
-    // Fetch company profiles
-    const profiles = await CompanyProfile.find({
-      user_id: { $in: companyIds }
-    }).select('user_id company_name').lean();
-
-    // 🔥 FALLBACK: Fetch User names for missing/empty profiles
-    const userIdsNeedingFallback = [];
-    profiles.forEach(p => {
-      if (!p.company_name?.trim()) {
-        userIdsNeedingFallback.push(p.user_id.toString());
+    // Collect all company IDs that need name lookup
+    const companyIdsNeedingName = [];
+    jobs.forEach(job => {
+      if (!job.company_name || job.company_name === 'N/A' || job.company_name === '') {
+        companyIdsNeedingName.push(job.company_id.toString());
       }
     });
 
-    // Also add IDs that have no profile at all
-    const profileIds = profiles.map(p => p.user_id.toString());
-    companyIds.forEach(id => {
-      if (!profileIds.includes(id)) {
-        userIdsNeedingFallback.push(id);
-      }
-    });
+    // Fetch company profiles in bulk
+    const profileMap = {};
+    const userMap = {};
 
-    // Fetch User names
-    let userMap = {};
-    if (userIdsNeedingFallback.length > 0) {
-      const users = await User.find({
-        _id: { $in: userIdsNeedingFallback }
-      }).select('_id first_name last_name').lean();
+    if (companyIdsNeedingName.length > 0) {
+      const uniqueIds = [...new Set(companyIdsNeedingName)];
 
-      users.forEach(u => {
-        userMap[u._id.toString()] = `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown Company';
+      // Get company profiles
+      const profiles = await CompanyProfile.find({
+        user_id: { $in: uniqueIds }
+      }).select('user_id company_name');
+
+      profiles.forEach(p => {
+        profileMap[p.user_id.toString()] = p.company_name;
       });
 
-      console.log('👤 User fallbacks:', users.length);
+      // Get user fallbacks for missing profiles
+      const users = await User.find({
+        _id: { $in: uniqueIds }
+      }).select('first_name last_name');
+
+      users.forEach(u => {
+        userMap[u._id.toString()] = `${u.first_name || ''} ${u.last_name || ''}`.trim();
+      });
     }
 
-    console.log('📋 Found profiles:', profiles.length);
-    profiles.forEach(p => {
-      console.log('   →', p.user_id.toString(), ':', p.company_name || '(empty, will use User name)');
-    });
+    // Enhance jobs with company names and match scores
+    const enhancedJobs = jobs.map(job => {
+      const jobObj = { ...job };
 
-    // Build lookup map
-    const companyMap = {};
-    profiles.forEach(p => {
-      const cid = p.user_id.toString();
-      const name = p.company_name?.trim();
-      companyMap[cid] = name || userMap[cid] || 'Unknown Company';
-    });
-
-    // Also add user fallbacks for missing profiles
-    Object.keys(userMap).forEach(uid => {
-      if (!companyMap[uid]) {
-        companyMap[uid] = userMap[uid];
+      // Fix company name
+      let finalCompanyName = job.company_name;
+      if (!finalCompanyName || finalCompanyName === 'N/A' || finalCompanyName === '') {
+        const profileName = profileMap[job.company_id.toString()];
+        const userName = userMap[job.company_id.toString()];
+        finalCompanyName = profileName || userName || 'Unknown Company';
       }
+      jobObj.company_name = finalCompanyName;
+
+      // Fix salary display
+      const salary = job.salary || {};
+      jobObj.salary_display = {
+        min: Number(salary.min) || 0,
+        max: Number(salary.max) || 0,
+        currency: salary.currency || 'INR',
+        formatted: formatSalary(salary.min, salary.max, salary.currency)
+      };
+
+      // Fix requirements display
+      const req = job.requirements || {};
+      jobObj.requirements_display = {
+        cgpa: Number(req.cgpa) || 0,
+        backlogs: Number(req.backlogs) || 0,
+        branches: Array.isArray(req.branches) ? req.branches : 
+                  (req.branches ? [req.branches] : ['Computer Science', 'Information Technology'])
+      };
+
+      // Calculate match score
+      const jobSkills = (job.skills_required || []).map(s => s.toLowerCase().trim());
+      let matchCount = 0;
+      if (studentSkills.length > 0 && jobSkills.length > 0) {
+        matchCount = jobSkills.filter(skill => 
+          studentSkills.some(ss => ss.includes(skill) || skill.includes(ss))
+        ).length;
+      }
+      const matchScore = jobSkills.length > 0 
+        ? Math.round((matchCount / jobSkills.length) * 100) 
+        : 0;
+
+      jobObj.match_score = matchScore;
+      jobObj.match_count = matchCount;
+      jobObj.total_skills = jobSkills.length;
+
+      return jobObj;
     });
 
-    // Enrich jobs
-    const enrichedJobs = [];
-    for (const job of jobs) {
-      const cid = job.company_id?.toString();
-      let companyName = job.company_name;
+    res.json({
+      success: true,
+      count: enhancedJobs.length,
+      data: enhancedJobs
+    });
 
-      if (!companyName || companyName === 'N/A' || companyName === '') {
-        companyName = companyMap[cid] || userMap[cid] || 'Unknown Company';
-
-        // Update DB for future
-        if (companyName !== 'N/A' && companyName !== 'Unknown Company') {
-          Job.findByIdAndUpdate(job._id, { company_name: companyName }).catch(() => {});
-        }
-      }
-
-      enrichedJobs.push({ ...job, company_name: companyName });
-    }
-
-    res.status(200).json({ success: true, count: enrichedJobs.length, data: enrichedJobs });
   } catch (error) {
-    console.error('❌ Get jobs error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Get All Jobs Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
 // ============================================
-// GET MY JOBS
+// GET COMPANY'S OWN JOBS
 // ============================================
 exports.getMyJobs = async (req, res) => {
   try {
-    const jobs = await Job.find({ company_id: req.user.userId }).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, count: jobs.length, data: jobs });
+    const jobs = await Job.find({ company_id: req.user.id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Get company name
+    const companyProfile = await CompanyProfile.findOne({ user_id: req.user.id });
+    const user = await User.findById(req.user.id);
+    const companyName = (companyProfile?.company_name) || 
+                        `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 
+                        'Your Company';
+
+    const enhancedJobs = jobs.map(job => {
+      const jobObj = { ...job };
+      jobObj.company_name = companyName;
+
+      const salary = job.salary || {};
+      jobObj.salary_display = {
+        formatted: formatSalary(salary.min, salary.max, salary.currency)
+      };
+
+      return jobObj;
+    });
+
+    res.json({
+      success: true,
+      count: enhancedJobs.length,
+      data: enhancedJobs
+    });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Get My Jobs Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
@@ -164,28 +272,40 @@ exports.getMyJobs = async (req, res) => {
 // ============================================
 exports.getJob = async (req, res) => {
   try {
-    const job = await Job.findById(req.params.id);
+    const job = await Job.findById(req.params.id).lean();
+
     if (!job) {
       return res.status(404).json({ success: false, message: 'Job not found' });
     }
 
+    // Fix company name
     let companyName = job.company_name;
-    if (!companyName || companyName === 'N/A') {
-      const profile = await CompanyProfile.findOne({ user_id: job.company_id }).select('company_name').lean();
-      companyName = profile?.company_name?.trim();
-
-      if (!companyName) {
-        const user = await User.findById(job.company_id).select('first_name last_name').lean();
-        companyName = user ? `${user.first_name} ${user.last_name}`.trim() : 'Unknown Company';
-      }
+    if (!companyName || companyName === 'N/A' || companyName === '') {
+      const profile = await CompanyProfile.findOne({ user_id: job.company_id });
+      const user = await User.findById(job.company_id);
+      companyName = profile?.company_name || 
+                     `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 
+                     'Unknown Company';
     }
+    job.company_name = companyName;
 
-    res.status(200).json({ 
-      success: true, 
-      data: { ...job.toObject(), company_name: companyName }
+    // Fix salary display
+    const salary = job.salary || {};
+    job.salary_display = {
+      formatted: formatSalary(salary.min, salary.max, salary.currency)
+    };
+
+    res.json({
+      success: true,
+      data: job
     });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Get Job Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
@@ -195,7 +315,7 @@ exports.getJob = async (req, res) => {
 exports.updateJob = async (req, res) => {
   try {
     const job = await Job.findOneAndUpdate(
-      { _id: req.params.id, company_id: req.user.userId },
+      { _id: req.params.id, company_id: req.user.id },
       req.body,
       { new: true, runValidators: true }
     );
@@ -204,9 +324,18 @@ exports.updateJob = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Job not found or unauthorized' });
     }
 
-    res.status(200).json({ success: true, data: job });
+    res.json({
+      success: true,
+      data: job,
+      message: 'Job updated successfully'
+    });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Update Job Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
@@ -217,129 +346,125 @@ exports.deleteJob = async (req, res) => {
   try {
     const job = await Job.findOneAndDelete({
       _id: req.params.id,
-      company_id: req.user.userId
+      company_id: req.user.id
     });
 
     if (!job) {
       return res.status(404).json({ success: false, message: 'Job not found or unauthorized' });
     }
 
-    res.status(200).json({ success: true, message: 'Job deleted successfully' });
+    res.json({
+      success: true,
+      message: 'Job deleted successfully'
+    });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Delete Job Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
 // ============================================
-// GET JOBS WITH MATCH %
+// GET JOBS WITH MATCH SCORE (Student)
 // ============================================
 exports.getJobsWithMatch = async (req, res) => {
   try {
-    const studentProfile = await StudentProfile.findOne({ user_id: req.user.userId }).lean();
-    const studentSkills = studentProfile?.skills || [];
+    // Get student skills
+    const studentProfile = await StudentProfile.findOne({ user_id: req.user.id });
+    const studentSkills = (studentProfile?.skills || []).map(s => s.toLowerCase().trim());
 
-    const jobs = await Job.find().sort({ createdAt: -1 }).lean();
+    const jobs = await Job.find({ status: 'active' }).lean();
 
-    const companyIds = [...new Set(jobs.map(j => j.company_id?.toString()).filter(Boolean))];
-    const profiles = await CompanyProfile.find({
-      user_id: { $in: companyIds }
-    }).select('user_id company_name').lean();
-
-    const profileIds = profiles.map(p => p.user_id.toString());
-    const missingIds = companyIds.filter(id => !profileIds.includes(id) || !profiles.find(p => p.user_id.toString() === id)?.company_name?.trim());
-
-    let userMap = {};
-    if (missingIds.length > 0) {
-      const users = await User.find({ _id: { $in: missingIds } }).select('_id first_name last_name').lean();
-      users.forEach(u => {
-        userMap[u._id.toString()] = `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown Company';
-      });
-    }
-
-    const companyMap = {};
-    profiles.forEach(p => {
-      companyMap[p.user_id.toString()] = p.company_name?.trim() || userMap[p.user_id.toString()] || 'Unknown Company';
-    });
-    missingIds.forEach(id => {
-      if (!companyMap[id]) companyMap[id] = userMap[id] || 'Unknown Company';
-    });
-
-    const enrichedJobs = jobs.map(job => {
-      const cid = job.company_id?.toString();
-      let companyName = job.company_name;
-
-      if (!companyName || companyName === 'N/A') {
-        companyName = companyMap[cid] || userMap[cid] || 'Unknown Company';
-      }
-
-      const requiredSkills = job.required_skills || [];
-      let matched = 0;
-      if (requiredSkills.length > 0 && studentSkills.length > 0) {
-        matched = requiredSkills.filter(skill => 
-          studentSkills.some(s => s.toLowerCase() === skill.toLowerCase())
-        ).length;
-      }
-      const matchPercent = requiredSkills.length > 0 
-        ? Math.round((matched / requiredSkills.length) * 100) 
-        : 0;
+    const jobsWithMatch = jobs.map(job => {
+      const jobSkills = (job.skills_required || []).map(s => s.toLowerCase().trim());
+      const matched = jobSkills.filter(skill =>
+        studentSkills.some(ss => ss.includes(skill) || skill.includes(ss))
+      );
 
       return {
         ...job,
-        company_name: companyName,
-        matchPercent,
-        matchedSkills: matched,
-        totalSkills: requiredSkills.length
+        match_score: jobSkills.length > 0 ? Math.round((matched.length / jobSkills.length) * 100) : 0,
+        matched_skills: matched,
+        total_skills: jobSkills.length
       };
     });
 
-    res.status(200).json({ success: true, data: enrichedJobs });
+    // Sort by match score
+    jobsWithMatch.sort((a, b) => b.match_score - a.match_score);
+
+    res.json({
+      success: true,
+      data: jobsWithMatch
+    });
+
   } catch (error) {
-    console.error('❌ Get jobs with match error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Get Jobs With Match Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
 // ============================================
-// FIX OLD JOBS — One-time migration
+// FIX COMPANY NAMES (One-time migration)
 // ============================================
 exports.fixCompanyNames = async (req, res) => {
   try {
-    const jobs = await Job.find({ $or: [
-      { company_name: { $exists: false } },
-      { company_name: 'N/A' },
-      { company_name: '' },
-      { company_name: null }
-    ]});
+    const jobs = await Job.find({
+      $or: [
+        { company_name: { $exists: false } },
+        { company_name: null },
+        { company_name: '' },
+        { company_name: 'N/A' }
+      ]
+    });
+
+    console.log(`🔧 Found ${jobs.length} jobs with missing company names`);
 
     let fixed = 0;
     for (const job of jobs) {
-      let companyName = null;
+      const profile = await CompanyProfile.findOne({ user_id: job.company_id });
+      const user = await User.findById(job.company_id);
 
-      // Try CompanyProfile first
-      const profile = await CompanyProfile.findOne({ user_id: job.company_id }).select('company_name').lean();
-      if (profile && profile.company_name?.trim()) {
-        companyName = profile.company_name.trim();
-      } else {
-        // Fallback to User
-        const user = await User.findById(job.company_id).select('first_name last_name').lean();
-        if (user) {
-          companyName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown Company';
-        }
-      }
+      const name = profile?.company_name || 
+                   `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 
+                   'Unknown Company';
 
-      if (companyName && companyName !== 'Unknown Company') {
-        job.company_name = companyName;
-        await job.save();
-        fixed++;
-      }
+      await Job.findByIdAndUpdate(job._id, { company_name: name });
+      fixed++;
+      console.log(`   ✅ Fixed: ${job.title} → ${name}`);
     }
 
-    res.status(200).json({
+    res.json({
       success: true,
-      message: `Fixed ${fixed} jobs with missing company names`,
-      totalChecked: jobs.length
+      message: `Fixed ${fixed}/${jobs.length} jobs`,
+      fixed
     });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Fix Company Names Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
+
+// ============================================
+// HELPER: Format Salary
+// ============================================
+function formatSalary(min, max, currency = 'INR') {
+  const minVal = Number(min) || 0;
+  const maxVal = Number(max) || 0;
+  const symbol = currency === 'INR' ? '₹' : (currency === 'USD' ? '$' : currency);
+
+  if (minVal === 0 && maxVal === 0) return 'Not Disclosed';
+  if (minVal === 0) return `${symbol}${(maxVal / 100000).toFixed(1)}L`;
+  if (maxVal === 0) return `${symbol}${(minVal / 100000).toFixed(1)}L`;
+
+  return `${symbol}${(minVal / 100000).toFixed(1)}L - ${symbol}${(maxVal / 100000).toFixed(1)}L`;
+}
