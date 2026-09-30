@@ -1,4 +1,4 @@
-  import { useState, useCallback } from 'react';
+    import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -6,7 +6,7 @@ const PostJob = () => {
   const { api } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    title: '', description: '', job_type: 'full_time', required_skills: '',
+    title: '', description: '', job_type: 'full-time', required_skills: '',
     min_cgpa: 7, max_backlogs: 0, eligible_branches: 'Computer Science, Information Technology',
     ctc_min: 800000, ctc_max: 1200000, location: '', application_deadline: ''
   });
@@ -20,9 +20,21 @@ const PostJob = () => {
     e.preventDefault();
     try {
       await api.post('/jobs/', {
-        ...form,
-        required_skills: form.required_skills.split(',').map((s) => s.trim()).filter((s) => s),
-        eligible_branches: form.eligible_branches.split(',').map((s) => s.trim()).filter((s) => s),
+        title: form.title,
+        description: form.description,
+        job_type: form.job_type,
+        skills_required: form.required_skills.split(',').map((s) => s.trim()).filter((s) => s),
+        requirements: {
+          cgpa: Number(form.min_cgpa) || 0,
+          backlogs: Number(form.max_backlogs) || 0,
+          branches: form.eligible_branches.split(',').map((s) => s.trim()).filter((s) => s)
+        },
+        salary: {
+          min: Number(form.ctc_min) || 0,
+          max: Number(form.ctc_max) || 0,
+          currency: 'INR'
+        },
+        location: form.location,
         status: 'active'
       });
       alert('✅ Job posted successfully!');

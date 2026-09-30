@@ -1,4 +1,4 @@
- // server/src/index.js
+   // server/src/index.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -19,6 +19,10 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded resumes/files to authenticated users' browser links.
+const path = require('path');
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // ============================================
 // DATABASE CONNECTION (Mongoose 6+ — NO deprecated options)
@@ -60,6 +64,7 @@ const safeRequire = (path, routePath) => {
 // Core routes
 safeRequire('./routes/authRoutes', '/api/v1/auth');
 safeRequire('./routes/jobRoutes', '/api/v1/jobs');
+safeRequire('./routes/studentRoutes', '/api/v1/students');
 
 // Optional routes (graceful if missing)
 safeRequire('./routes/applicationRoutes', '/api/v1/applications');

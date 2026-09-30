@@ -1,4 +1,4 @@
- // client/src/pages/Jobs.jsx
+   // client/src/pages/Jobs.jsx
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,10 +7,30 @@ const Jobs = () => {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [appliedJobIds, setAppliedJobIds] = useState(new Set());
 
   useEffect(() => {
     fetchJobs();
+    fetchMyApplications();
   }, []);
+
+  const fetchMyApplications = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/v1/applications/my-applications', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        const ids = (data.data || [])
+          .map(app => app.job_id?._id || app.job_id)
+          .filter(Boolean);
+        setAppliedJobIds(new Set(ids.map(String)));
+      }
+    } catch (err) {
+      console.error('Fetch my applications error:', err);
+    }
+  };
 
   const fetchJobs = async () => {
     try {
@@ -38,6 +58,11 @@ const Jobs = () => {
   };
 
   const handleApply = async (jobId) => {
+    if (appliedJobIds.has(String(jobId))) {
+      alert('✅ Already applied to this job. You can track the application in My Applications.');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/v1/applications', {
@@ -50,12 +75,26 @@ const Jobs = () => {
       });
 
       const data = await res.json();
-      if (data.success) {
-        alert('✅ Applied successfully!');
+
+      if (res.ok && data.success) {
+        setAppliedJobIds(prev => {
+          const next = new Set(prev);
+          next.add(String(jobId));
+          return next;
+        });
+        alert('✅ Applied successfully! Company can now review your application.');
+      } else if (data.alreadyApplied || res.status === 409) {
+        setAppliedJobIds(prev => {
+          const next = new Set(prev);
+          next.add(String(jobId));
+          return next;
+        });
+        alert('✅ Already applied to this job. Track it from My Applications.');
       } else {
         alert(data.message || 'Application failed');
       }
     } catch (err) {
+      console.error('Apply error:', err);
       alert('❌ Failed to apply. Try again.');
     }
   };
@@ -186,11 +225,12 @@ const Jobs = () => {
 
             {/* Apply Button (Student only) */}
             {user?.role === 'student' && (
-              <button 
-                style={styles.applyBtn} 
+              <button
+                style={appliedJobIds.has(String(job._id)) ? styles.appliedBtn : styles.applyBtn}
                 onClick={() => handleApply(job._id)}
+                disabled={appliedJobIds.has(String(job._id))}
               >
-                🚀 Apply Now
+                {appliedJobIds.has(String(job._id)) ? '✅ Already Applied' : '🚀 Apply Now'}
               </button>
             )}
           </div>
@@ -233,6 +273,10 @@ const styles = {
   skill: { background: '#e3f2fd', color: '#1565c0', padding: '3px 10px', borderRadius: '6px', fontSize: '12px' },
   branches: { marginBottom: '10px', fontSize: '13px', color: '#666' },
   description: { fontSize: '14px', color: '#555', lineHeight: '1.5', marginBottom: '15px' },
+  appliedBtn: {
+    width: '100%', padding: '10px', background: '#d1d5db', color: '#374151',
+    border: 'none', borderRadius: '8px', cursor: 'not-allowed', fontSize: '15px', fontWeight: '600'
+  },
   applyBtn: { 
     width: '100%', 
     padding: '10px', 

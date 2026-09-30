@@ -1,4 +1,4 @@
- const { Application, Job, StudentProfile, CompanyProfile } = require('../models');
+   const { Application, Job, StudentProfile, CompanyProfile } = require('../models');
 
 // ============================================
 // APPLY FOR JOB (Student only)

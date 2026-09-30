@@ -1,4 +1,4 @@
- // server/src/controllers/jobController.js
+   // server/src/controllers/jobController.js
 const Job = require('../models/Job');
 const CompanyProfile = require('../models/CompanyProfile');
 const User = require('../models/User');

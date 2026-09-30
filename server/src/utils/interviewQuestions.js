@@ -1,4 +1,4 @@
- const QUESTION_BANK = {
+  const QUESTION_BANK = {
   'Java Developer': {
     technical: [
       'Explain JVM, JRE, and JDK.',

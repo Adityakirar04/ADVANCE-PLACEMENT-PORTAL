@@ -1,4 +1,4 @@
- const mongoose = require('mongoose');
+  const mongoose = require('mongoose');
 
 const studentProfileSchema = new mongoose.Schema({
   user_id: {
@@ -56,6 +56,11 @@ const studentProfileSchema = new mongoose.Schema({
   },
 
   address: {
+    type: String,
+    default: ''
+  },
+
+  city: {
     type: String,
     default: ''
   }

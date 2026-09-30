@@ -1,4 +1,4 @@
- const { parseResume } = require('./resumeParser');
+  const { parseResume } = require('./resumeParser');
 
 const INDUSTRY_STANDARDS = {
   'Computer Science': [

@@ -1,4 +1,4 @@
- // server/src/routes/aiRoutes.js
+  // server/src/routes/aiRoutes.js
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');

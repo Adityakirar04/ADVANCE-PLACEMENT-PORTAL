@@ -1,4 +1,4 @@
- // server/src/utils/groqAI.js
+  // server/src/utils/groqAI.js
 const Groq = require('groq-sdk');
 
 // ============================================

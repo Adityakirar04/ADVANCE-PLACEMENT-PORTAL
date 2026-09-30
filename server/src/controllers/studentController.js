@@ -1,4 +1,4 @@
- const mongoose = require('mongoose');
+   const mongoose = require('mongoose');
 
 // Direct model access (alternative way)
 const StudentProfile = mongoose.model('StudentProfile');
@@ -31,6 +31,11 @@ exports.updateProfile = async (req, res) => {
     // Update skills if provided
     if (req.body.skills !== undefined) {
       studentProfile.skills = req.body.skills;
+    }
+
+    // Update city if provided
+    if (req.body.city !== undefined) {
+      studentProfile.city = req.body.city;
     }
     
     await studentProfile.save();

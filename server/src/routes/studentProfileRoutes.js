@@ -1,4 +1,4 @@
-// server/src/routes/studentProfileRoutes.js
+ // server/src/routes/studentProfileRoutes.js
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
