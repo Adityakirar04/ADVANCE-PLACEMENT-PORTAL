@@ -1,4 +1,4 @@
-   import { useState, useCallback } from 'react';
+    import { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const ResumeAnalyzer = () => {
@@ -59,9 +59,7 @@ const ResumeAnalyzer = () => {
 
       // 🔥 IMPORTANT: Content-Type mat set karo manually
       // Axios khud multipart boundary set karta hai
-      const res = await api.post('/ai/analyze-resume', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await api.post('/ai/analyze-resume', formData);
 
       setResult(res.data.data);
     } catch (err) {
@@ -135,13 +133,13 @@ const ResumeAnalyzer = () => {
 
         <button
           onClick={handleAnalyze}
-          disabled={loading || !file}
+          disabled={loading}
           style={{
             marginTop: '16px', padding: '10px 32px',
             background: loading ? '#9ca3af' : '#166534',
             color: '#fff', border: 'none', borderRadius: '8px',
             fontSize: '14px', fontWeight: '600',
-            cursor: loading || !file ? 'not-allowed' : 'pointer'
+            cursor: loading ? 'not-allowed' : 'pointer'
           }}
         >
           {loading ? '⏳ Analyzing...' : '⚡ Analyze Resume'}
@@ -285,6 +283,20 @@ const ResumeAnalyzer = () => {
               </div>
             )}
           </div>
+
+          {result.aiInsights && (
+            <div style={{ background: '#ffffff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb' }}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1e3a8a', fontWeight: '700' }}>🤖 AI Recruiter Insights</h4>
+              {result.aiInsights.overall_feedback && (
+                <p style={{ margin: '0 0 10px', color: '#374151', fontSize: '13px', lineHeight: '1.6' }}>{result.aiInsights.overall_feedback}</p>
+              )}
+              {result.aiInsights.improvements && (
+                <div style={{ marginTop: '8px', color: '#4b5563', fontSize: '13px', lineHeight: '1.6' }}>
+                  <strong>Improvements:</strong> {result.aiInsights.improvements}
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
       )}
